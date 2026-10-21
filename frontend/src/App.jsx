@@ -1,0 +1,314 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import Navbar from './components/Navbar';
+import DashboardOverview from './components/DashboardOverview';
+import ClusterTopology from './components/ClusterTopology';
+import VMManagement from './components/VMManagement';
+import CreateVMModal from './components/CreateVMModal';
+import EditVMModal from './components/EditVMModal';
+import VMConsoleModal from './components/VMConsoleModal';
+import TenantManagement from './components/TenantManagement';
+import UserManagement from './components/UserManagement';
+import BillingPreview from './components/BillingPreview';
+import LoginModal from './components/LoginModal';
+import { api } from './api/client';
+
+export default function App() {
+  const [user, setUser] = useState(api.getUser());
+  const [activeTab, setActiveTab] = useState('overview');
+  
+  // Data state
+  const [summary, setSummary] = useState(null);
+  const [clusters, setClusters] = useState([]);
+  const [vms, setVMs] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingVM, setEditingVM] = useState(null);
+  const [consoleVM, setConsoleVM] = useState(null);
+
+  // Notification Toast
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Fetch all initial data
+  const loadData = useCallback(async () => {
+    if (!api.isAuthenticated()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const [sumData, clusterData, vmData] = await Promise.all([
+        api.getDashboardSummary(),
+        api.getClusters(),
+        api.getVMs(),
+      ]);
+
+      setSummary(sumData);
+      setClusters(clusterData || []);
+      setVMs(vmData || []);
+
+      if (api.isAdmin()) {
+        const [tenantData, userData] = await Promise.all([
+          api.getTenants(),
+          api.getUsers(),
+        ]);
+        setTenants(tenantData || []);
+        setUsers(userData || []);
+      }
+    } catch (err) {
+      console.error("Failed to load cloud state:", err);
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (api.isAuthenticated()) {
+      loadData();
+    } else {
+      setLoading(false);
+    }
+
+    // Auto-refresh metrics every 20 seconds
+    const interval = setInterval(() => {
+      if (api.isAuthenticated()) {
+        loadData();
+      }
+    }, 20000);
+
+    return () => clearInterval(interval);
+  }, [loadData]);
+
+  // Auth Handlers
+  const handleLoginSuccess = (loggedInUser) => {
+    setUser(loggedInUser);
+    loadData();
+    showToast(`Welcome, ${loggedInUser.full_name || loggedInUser.username} (${loggedInUser.role})`);
+  };
+
+  const handleLogout = () => {
+    api.logout();
+    setUser(null);
+    setActiveTab('overview');
+    showToast("Logged out successfully");
+  };
+
+  const handleSwitchRole = async () => {
+    const targetRole = user?.role === 'ADMIN' ? 'operator' : 'admin';
+    const targetPass = targetRole === 'admin' ? 'admin123' : 'operator123';
+    try {
+      const resp = await api.login(targetRole, targetPass);
+      setUser(resp.user);
+      await loadData();
+      showToast(`Switched active session to: ${resp.user.role}`);
+    } catch (err) {
+      showToast("Failed to switch role: " + err.message, 'error');
+    }
+  };
+
+  // VM Action Handlers
+  const handleStartVM = async (vm) => {
+    try {
+      await api.executeVMAction(vm.id, 'start');
+      showToast(`Virtual machine '${vm.name}' powered ON`);
+      await loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleStopVM = async (vm) => {
+    try {
+      await api.executeVMAction(vm.id, 'stop');
+      showToast(`Virtual machine '${vm.name}' powered OFF`);
+      await loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleRestartVM = async (vm) => {
+    try {
+      await api.executeVMAction(vm.id, 'restart');
+      showToast(`Reboot signal sent to '${vm.name}'`);
+      await loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleDeleteVM = async (vm) => {
+    if (!window.confirm(`Are you sure you want to permanently delete '${vm.name}'? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.deleteVM(vm.id);
+      showToast(`Virtual machine '${vm.name}' deleted successfully`);
+      await loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleCreateVM = async (payload) => {
+    const newVM = await api.createVM(payload);
+    showToast(`Virtual machine '${newVM.name}' deployed on ${newVM.hypervisor_type}`);
+    await loadData();
+  };
+
+  const handleUpdateVM = async (id, payload) => {
+    await api.updateVM(id, payload);
+    showToast(`Updated virtual machine specifications`);
+    await loadData();
+  };
+
+  // Dedicated Login Page if unauthenticated
+  if (!user) {
+    return (
+      <>
+        {toast && (
+          <div style={{
+            position: 'fixed',
+            top: '24px',
+            right: '24px',
+            zIndex: 1000,
+            background: toast.type === 'error' ? 'linear-gradient(135deg, rgba(160, 30, 60, 0.96), rgba(100, 15, 40, 0.96))' : 'linear-gradient(135deg, rgba(10, 100, 80, 0.96), rgba(6, 70, 55, 0.96))',
+            border: toast.type === 'error' ? '1px solid rgba(224, 54, 90, 0.4)' : '1px solid rgba(0, 178, 178, 0.3)',
+            color: '#fff',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {toast.message}
+          </div>
+        )}
+        <LoginModal onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
+  }
+
+  return (
+    <div className="app-container">
+      {/* Toast Notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: '24px',
+          right: '24px',
+          zIndex: 1000,
+          background: toast.type === 'error' ? 'rgba(244, 63, 94, 0.95)' : 'rgba(16, 185, 129, 0.95)',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+          fontSize: '0.88rem',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Top Navbar */}
+      <Navbar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        user={user}
+        onSwitchRole={handleSwitchRole}
+        onLogout={handleLogout}
+      />
+
+      {/* Main Page Content */}
+      <main className="main-content">
+        {activeTab === 'overview' && (
+          <DashboardOverview 
+            summary={summary} 
+            onNavigateTab={setActiveTab} 
+          />
+        )}
+
+        {activeTab === 'clusters' && (
+          <ClusterTopology 
+            clusters={clusters} 
+            onRefresh={loadData} 
+          />
+        )}
+
+        {activeTab === 'vms' && (
+          <VMManagement 
+            vms={vms}
+            user={user}
+            clusters={clusters}
+            onStartVM={handleStartVM}
+            onStopVM={handleStopVM}
+            onRestartVM={handleRestartVM}
+            onOpenConsole={(vm) => setConsoleVM(vm)}
+            onOpenCreateModal={() => setIsCreateModalOpen(true)}
+            onOpenEditModal={(vm) => setEditingVM(vm)}
+            onDeleteVM={handleDeleteVM}
+          />
+        )}
+
+        {activeTab === 'tenants' && user?.role === 'ADMIN' && (
+          <TenantManagement 
+            tenants={tenants}
+            onRefresh={loadData}
+          />
+        )}
+
+        {activeTab === 'users' && user?.role === 'ADMIN' && (
+          <UserManagement 
+            users={users}
+            vms={vms}
+            tenants={tenants}
+            onRefresh={loadData}
+            showToast={showToast}
+          />
+        )}
+
+        {activeTab === 'billing' && (
+          <BillingPreview />
+        )}
+      </main>
+
+      {/* Modals */}
+      {isCreateModalOpen && (
+        <CreateVMModal 
+          clusters={clusters}
+          onClose={() => setIsCreateModalOpen(false)}
+          onCreate={handleCreateVM}
+        />
+      )}
+
+      {editingVM && (
+        <EditVMModal 
+          vm={editingVM}
+          onClose={() => setEditingVM(null)}
+          onUpdate={handleUpdateVM}
+        />
+      )}
+
+      {consoleVM && (
+        <VMConsoleModal 
+          vm={consoleVM}
+          onClose={() => setConsoleVM(null)}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,32 @@
+package drivers
+
+import (
+	"context"
+	"iaas-dashboard/internal/models"
+)
+
+type ConsoleConnectionInfo struct {
+	Ticket       string `json:"ticket"`
+	Protocol     string `json:"protocol"` // "vnc" or "webmks"
+	TargetHost   string `json:"target_host"`
+	TargetPort   int    `json:"target_port"`
+	WebSocketURL string `json:"websocket_url"`
+}
+
+type HypervisorDriver interface {
+	// Node Telemetry
+	RefreshNodeStats(ctx context.Context, cluster *models.Cluster, node *models.Node) (*models.Node, error)
+
+	// VM Lifecycle
+	CreateVM(ctx context.Context, cluster *models.Cluster, node *models.Node, req models.CreateVMRequest) (int, string, string, error) // returns vmid, ip, mac, error
+	UpdateVMSpecs(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.UpdateVMRequest) error
+	DeleteVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error
+
+	// VM Power Actions
+	StartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error
+	StopVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, force bool) error
+	RestartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error
+
+	// Remote Console
+	GetConsoleTicket(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string) (*ConsoleConnectionInfo, error)
+}

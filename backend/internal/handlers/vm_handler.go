@@ -1,0 +1,154 @@
+package handlers
+
+import (
+	"net/http"
+
+	"iaas-dashboard/internal/middleware"
+	"iaas-dashboard/internal/models"
+	"iaas-dashboard/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+type VMHandler struct {
+	vmService *services.VMService
+}
+
+func NewVMHandler(vmService *services.VMService) *VMHandler {
+	return &VMHandler{vmService: vmService}
+}
+
+func (h *VMHandler) ListVMs(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+	role := middleware.GetUserRole(c)
+
+	vms, err := h.vmService.ListVMs(c.Request.Context(), tenantID, userID, role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list virtual machines: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, vms)
+}
+
+func (h *VMHandler) GetVM(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	vm, err := h.vmService.GetVMByID(c.Request.Context(), vmID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Operators can only view their own tenant's VMs
+	role := middleware.GetUserRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if role == models.RoleOperator && vm.TenantID != tenantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: cannot access VM of another tenant"})
+		return
+	}
+
+	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) CreateVM(c *gin.Context) {
+	var req models.CreateVMRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	// Admin can optionally create VM for a specific tenant if provided via query
+	targetTenantStr := c.Query("tenant_id")
+	if targetTenantStr != "" {
+		if parsed, err := uuid.Parse(targetTenantStr); err == nil {
+			tenantID = parsed
+		}
+	}
+
+	vm, err := h.vmService.CreateVM(c.Request.Context(), tenantID, userID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, vm)
+}
+
+func (h *VMHandler) UpdateVM(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	var req models.UpdateVMRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	vm, err := h.vmService.UpdateVMSpecs(c.Request.Context(), vmID, userID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) DeleteVM(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	err = h.vmService.DeleteVM(c.Request.Context(), vmID, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Virtual machine successfully deleted"})
+}
+
+func (h *VMHandler) ExecutePowerAction(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	var req models.VMActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Action ('start', 'stop', 'restart') is required"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	vm, err := h.vmService.ExecutePowerAction(c.Request.Context(), vmID, userID, tenantID, role, req.Action, req.Force)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, vm)
+}
