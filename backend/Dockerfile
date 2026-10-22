@@ -5,10 +5,12 @@ WORKDIR /app
 
 RUN apk add --no-cache git
 
+COPY go.mod go.sum* ./
+RUN go mod download
+
 COPY . .
 
-# Download dependencies and build binary
-RUN go mod tidy
+# Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /iaas-api ./cmd/api/main.go
 
 # Final minimal runner stage
