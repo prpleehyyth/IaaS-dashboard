@@ -39,7 +39,7 @@ export default function BillingPreview() {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-          Continuous time-series consumption telemetry tracking active workloads across 4 hybrid clusters.
+          Continuous time-series consumption telemetry tracking active workloads across connected hypervisor clusters.
         </p>
       </div>
 
@@ -75,6 +75,14 @@ export default function BillingPreview() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: '24px', marginBottom: '34px' }}>
         {loading ? (
           <div style={{ padding: '40px', color: 'var(--text-dim)', textAlign: 'center' }}>Calculating telemetry samples...</div>
+        ) : summaries.length === 0 ? (
+          <div className="glass-panel" style={{ gridColumn: '1 / -1', padding: '40px', textAlign: 'center' }}>
+            <FileText size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px auto' }} />
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>No Telemetry Usage Recorded (Virgin State)</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '480px', margin: '0 auto' }}>
+              Resource consumption samples will automatically accumulate once virtual machines are deployed and running on connected hypervisor nodes.
+            </p>
+          </div>
         ) : (
           summaries.map((s) => (
             <div key={s.tenant_id} className="glass-panel" style={{ padding: '24px' }}>

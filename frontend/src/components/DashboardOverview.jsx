@@ -18,8 +18,8 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
   }
 
   const {
-    total_clusters = 4,
-    total_nodes = 12,
+    total_clusters = 0,
+    total_nodes = 0,
     total_vms = 0,
     running_vms = 0,
     stopped_vms = 0,
@@ -33,6 +33,9 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
     recent_logs = []
   } = summary;
 
+  const vmwareCount = clusters.filter(c => c.type === 'VMWARE').length;
+  const proxmoxCount = clusters.filter(c => c.type === 'PROXMOX').length;
+
   const cpuPct = total_cpu_cores > 0 ? Math.round((allocated_cpu / total_cpu_cores) * 100) : 0;
   const ramPct = total_ram_gb > 0 ? Math.round((allocated_ram_gb / total_ram_gb) * 100) : 0;
   const storageTotalGB = total_storage_tb * 1000;
@@ -45,22 +48,22 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
         <div>
           <h1 style={{ fontSize: '1.85rem', fontWeight: 800 }}>Infrastructure Command Dashboard</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-            Maritime Hybrid Fleet Controller — 3 VMware vSphere Clusters + 1 Proxmox VE Cluster
+            Hybrid Infrastructure Fleet Controller — {clusters.length} Cluster{clusters.length !== 1 ? 's' : ''} ({vmwareCount} VMware + {proxmoxCount} Proxmox)
           </p>
         </div>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '8px', 
-          background: 'rgba(16, 185, 129, 0.08)', 
-          border: '1px solid rgba(16, 185, 129, 0.25)', 
+          background: total_nodes > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(100, 116, 139, 0.08)', 
+          border: total_nodes > 0 ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(100, 116, 139, 0.25)', 
           padding: '8px 18px', 
           borderRadius: '9999px',
-          boxShadow: '0 1px 6px rgba(16, 185, 129, 0.1)'
+          boxShadow: '0 1px 6px rgba(0, 0, 0, 0.05)'
         }}>
-          <span className="status-dot online"></span>
-          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#059669' }}>
-            12 Nodes Operational & Synchronized
+          <span className={`status-dot ${total_nodes > 0 ? 'online' : 'stopped'}`}></span>
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: total_nodes > 0 ? '#059669' : 'var(--text-muted)' }}>
+            {total_nodes} Compute Node{total_nodes !== 1 ? 's' : ''} Synchronized
           </span>
         </div>
       </div>
@@ -76,7 +79,7 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
             <div className="stat-val">{total_clusters}</div>
             <div className="stat-lbl">Managed Clusters</div>
             <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-              3 VMware + 1 Proxmox
+              {vmwareCount} VMware + {proxmoxCount} Proxmox
             </div>
           </div>
         </div>
@@ -89,8 +92,8 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
           <div>
             <div className="stat-val">{total_nodes}</div>
             <div className="stat-lbl">Physical Compute Nodes</div>
-            <div style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 600, marginTop: '2px' }}>
-              3 Nodes / Cluster (100% Ready)
+            <div style={{ fontSize: '0.74rem', color: total_nodes > 0 ? '#059669' : 'var(--text-dim)', fontWeight: 600, marginTop: '2px' }}>
+              {total_clusters > 0 ? (total_nodes / total_clusters).toFixed(1) : 0} Nodes / Cluster avg
             </div>
           </div>
         </div>
@@ -158,7 +161,7 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
         </div>
       </div>
 
-      {/* Cluster Quick Cards (4 Clusters) */}
+      {/* Cluster Quick Cards */}
       <div style={{ marginBottom: '34px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
           <h2 style={{ fontSize: '1.3rem', fontWeight: 700 }}>Cluster Infrastructure Fleet</h2>
@@ -166,67 +169,87 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
             className="btn btn-secondary btn-sm"
             onClick={() => onNavigateTab('clusters')}
           >
-            <span>Inspect All 12 Physical Nodes</span>
+            <span>Inspect All Nodes ({total_nodes})</span>
             <ArrowUpRight size={14} />
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-          {clusters.map((cluster) => {
-            const isVMware = cluster.type === 'VMWARE';
-            return (
-              <div 
-                key={cluster.id} 
-                className="glass-panel" 
-                style={{ 
-                  padding: '22px', 
-                  borderTop: `3px solid ${isVMware ? 'var(--ocean-blue)' : '#ea580c'}` 
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <span className={isVMware ? 'badge-vmware' : 'badge-proxmox'}>
-                    {cluster.type}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="status-dot online"></span>
-                    <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>{cluster.status}</span>
+        {clusters.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
+            <Layers size={40} color="var(--text-dim)" style={{ margin: '0 auto 14px auto' }} />
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
+              No Hypervisor Clusters Connected (Virgin State)
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 20px auto' }}>
+              This environment is virgin and clean. Connect your bare-metal Proxmox VE or VMware vSphere cluster in the Clusters tab to begin monitoring hardware and provisioning virtual machines.
+            </p>
+            <button 
+              className="btn btn-primary btn-sm"
+              onClick={() => onNavigateTab('clusters')}
+            >
+              <Layers size={15} />
+              <span>Connect First Cluster</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+            {clusters.map((cluster) => {
+              const isVMware = cluster.type === 'VMWARE';
+              return (
+                <div 
+                  key={cluster.id} 
+                  className="glass-panel" 
+                  style={{ 
+                    padding: '22px', 
+                    borderTop: `3px solid ${isVMware ? 'var(--ocean-blue)' : '#ea580c'}` 
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <span className={isVMware ? 'badge-vmware' : 'badge-proxmox'}>
+                      {cluster.type}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="status-dot online"></span>
+                      <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>{cluster.status}</span>
+                    </div>
                   </div>
-                </div>
 
-                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  {cluster.name}
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                  Datacenter: <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>{cluster.datacenter}</span> • Endpoint: <span style={{ color: '#1e3a8a', fontFamily: 'var(--font-mono)' }}>{cluster.endpoint}</span>
-                </div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
+                    {cluster.name}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                    Datacenter: <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>{cluster.datacenter}</span> • Endpoint: <span style={{ color: '#1e3a8a', fontFamily: 'var(--font-mono)' }}>{cluster.endpoint}</span>
+                  </div>
 
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr 1fr 1fr', 
-                  gap: '10px', 
-                  background: '#f8fafc', 
-                  padding: '12px 14px', 
-                  borderRadius: '10px', 
-                  border: '1px solid var(--border-subtle)' 
-                }}>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>NODES</div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>{cluster.nodes?.length || 3} Online</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>CPU CORES</div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1e3a8a' }}>{cluster.total_cpu_cores} Cores</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>STORAGE</div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>{cluster.total_storage_tb} TB</div>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 1fr 1fr', 
+                    gap: '10px', 
+                    background: '#f8fafc', 
+                    padding: '12px 14px', 
+                    borderRadius: '10px', 
+                    border: '1px solid var(--border-subtle)' 
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>NODES</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>{cluster.nodes?.length || 0} Online</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>CPU CORES</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1e3a8a' }}>{cluster.total_cpu_cores} Cores</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>RAM (GB)</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>{cluster.total_ram_gb} GB</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
 
       {/* Activity Logs Table */}
       <div>

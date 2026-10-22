@@ -72,9 +72,9 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
       <div className="modal-content" style={{ maxWidth: '640px' }}>
         <div className="modal-header">
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Deploy New Fleet Vessel</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Deploy Virtual Machine</h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Admiralty Provisioning Engine (VMware vSphere & Proxmox VE)
+              Hypervisor Provisioning Engine (VMware vSphere & Proxmox VE)
             </p>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ padding: '6px' }}>
@@ -84,6 +84,15 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {clusters.length === 0 && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '12px 16px', borderRadius: '8px', color: '#b45309', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <AlertCircle size={18} />
+                <span>
+                  <strong>No clusters available.</strong> Please register at least one Proxmox or VMware cluster in the <strong>Clusters</strong> tab before provisioning a virtual machine.
+                </span>
+              </div>
+            )}
+
             {error && (
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '8px', color: '#dc2626', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertCircle size={16} />
@@ -93,11 +102,11 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
             {/* VM Name */}
             <div className="form-group">
-              <label className="form-label">Virtual Machine Vessel Name / Tag</label>
+              <label className="form-label">Virtual Machine Name</label>
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="e.g. naval-sentinel-01 or db-primary-cluster"
+                placeholder="e.g. web-app-prod-01 or db-postgres-node"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -107,35 +116,50 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
             {/* Target Cluster & Node */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div className="form-group">
-                <label className="form-label">Target Cluster (4 Available)</label>
+                <label className="form-label">Target Cluster ({clusters.length} Available)</label>
                 <select 
                   className="form-select" 
                   value={selectedClusterId} 
                   onChange={(e) => handleClusterChange(e.target.value)}
                 >
-                  {clusters.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.type})
-                    </option>
-                  ))}
+                  {clusters.length === 0 ? (
+                    <option value="">No clusters registered</option>
+                  ) : (
+                    clusters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.type})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Target Node (3 Nodes / Cluster)</label>
+                <label className="form-label">Target Compute Node ({availableNodes.length} Available)</label>
                 <select 
                   className="form-select" 
                   value={selectedNodeId} 
                   onChange={(e) => setSelectedNodeId(e.target.value)}
+                  disabled={availableNodes.length === 0}
                 >
-                  {availableNodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.name} ({n.ip_address})
-                    </option>
-                  ))}
+                  {availableNodes.length === 0 ? (
+                    <option value="">No nodes in selected cluster</option>
+                  ) : (
+                    availableNodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name} ({n.ip_address})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
+
+            {selectedCluster && availableNodes.length === 0 && (
+              <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: '8px', color: '#92400e', fontSize: '0.8rem', marginBottom: '14px' }}>
+                Cluster <strong>{selectedCluster.name}</strong> has no registered compute nodes. Go to the <strong>Clusters</strong> tab and click <strong>Sync Fleet</strong> or add a node manually before deploying.
+              </div>
+            )}
 
             {/* OS Template */}
             <div className="form-group">
@@ -212,7 +236,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting || clusters.length === 0}>
               {isSubmitting ? 'Provisioning...' : 'Deploy Virtual Machine'}
             </button>
           </div>

@@ -19,7 +19,7 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
   // Short labels keep the bar on a single line; full description lives in the tooltip
   const tabs = [
     { id: 'overview', label: 'Overview', title: 'Overview', icon: LayoutDashboard },
-    { id: 'clusters', label: 'Clusters', title: 'Clusters (4) & Nodes (12)', icon: Server },
+    { id: 'clusters', label: 'Clusters', title: 'Clusters & Compute Nodes', icon: Server },
     { id: 'vms', label: 'VM Fleet', title: 'Virtual Machines', icon: HardDrive },
     ...(isAdmin ? [
       { id: 'tenants', label: 'Tenants', title: 'Tenants & Quotas', icon: Building2 },

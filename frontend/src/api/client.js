@@ -91,6 +91,51 @@ class ApiClient {
     return this.request('/clusters');
   }
 
+  async createCluster(payload) {
+    return this.request('/clusters', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async testClusterConnection(payload) {
+    return this.request('/clusters/test-connection', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async syncCluster(id) {
+    return this.request(`/clusters/${id}/sync`, {
+      method: 'POST',
+    });
+  }
+
+  async deleteCluster(id) {
+    return this.request(`/clusters/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async addNode(clusterId, payload) {
+    return this.request(`/clusters/${clusterId}/nodes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteNode(clusterId, nodeId) {
+    return this.request(`/clusters/${clusterId}/nodes/${nodeId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async resetVirgin() {
+    return this.request('/system/reset-virgin', {
+      method: 'POST',
+    });
+  }
+
   // Virtual Machine Endpoints
   async getVMs() {
     return this.request('/vms');

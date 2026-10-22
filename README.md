@@ -1,28 +1,34 @@
 # CloudForge IaaS — Multi-Tenant Hybrid Cloud Controller (VMware & Proxmox)
 
-Enterprise-grade multi-tenant private cloud management platform built to orchestrate **3 VMware vSphere clusters (9 nodes)** and **1 Proxmox VE cluster (3 nodes)** with role-based access control, granular user-to-VM assignment, in-browser remote console, and billing telemetry.
+Enterprise-grade multi-tenant private cloud management platform built to orchestrate **VMware vSphere** and **Proxmox VE** clusters with dynamic cluster registration, role-based access control, in-browser remote console, and billing telemetry.
 
 ---
 
-## 👥 User Seeder & Kredensial Akun (Default Accounts)
+## 🚀 Status Environment: VIRGIN DEVELOPMENT MODE
 
-Sistem telah dilengkapi dengan **User Seeder** otomatis di database PostgreSQL (`init-db/01-init.sql`). Setiap akun operator telah di-assign ke VM tertentu untuk menguji **isolasi akses multi-tenant & granular per-user**.
+Sistem ini telah dikonfigurasi dalam mode **DEVELOPMENT (Virgin State)**:
+* **0 Mock Clusters & 0 Mock Nodes** (Database bersih total, siap dihubungkan ke cluster Proxmox VE atau VMware vSphere asli via UI/API).
+* **0 Dummy Virtual Machines** (Kosong total, siap di-provisioning).
+* **0 Dummy Activity Logs & Metering Samples**.
+* **1 Default Administrator Account** (`admin` / `admin123`) untuk login pertama kali.
+* **1 Default Organization** (`Default Organization`).
 
-| Username | Password | Role | Scope Akses / Assigned VMs | Deskripsi & Hak Akses |
+---
+
+## 👥 Kredensial Akun Default (Superadmin)
+
+| Username | Password | Role | Scope Akses | Deskripsi |
 | :--- | :--- | :--- | :--- | :--- |
-| `admin` | `admin123` | **ADMIN** | **Semua 12 VMs** (Global Access) | **Cloud Administrator**: Hak penuh create, edit specs, start, stop, delete VM, manajemen user, assign akses VM, dan setting kuota tenant. |
-| `operator` | `operator123` | **OPERATOR** | **3 VMs**:<br>• `k8s-master-01` (VMware)<br>• `postgres-primary` (VMware)<br>• `pve-analytics-engine` (Proxmox) | **General Operator**: Multi-cluster operator umum. Hanya dapat start, stop, dan buka remote web console pada VM yang di-assign. |
-| `devops-lead` | `devops123` | **OPERATOR** | **4 VMs**:<br>• `k8s-master-01` (VMware)<br>• `k8s-worker-01` (VMware)<br>• `k8s-worker-02` (VMware)<br>• `pve-builder-runner-01` (Proxmox) | **DevOps & CI/CD Lead**: Dikhususkan untuk mengelola cluster Kubernetes dan runner build automation. |
-| `db-admin` | `dbadmin123` | **OPERATOR** | **3 VMs**:<br>• `postgres-primary` (VMware)<br>• `postgres-replica` (VMware)<br>• `redis-sentinel-cluster` (VMware) | **Database Administrator**: Dikhususkan untuk stack database stateful (PostgreSQL High Availability & Redis Sentinel). |
-| `frontend-dev` | `frontend123` | **OPERATOR** | **3 VMs**:<br>• `nginx-edge-proxy-01` (VMware)<br>• `nginx-edge-proxy-02` (VMware)<br>• `pve-monitoring-grafana` (Proxmox) | **Web & Edge Engineer**: Akses ke reverse proxy Nginx dan server monitoring Grafana. |
-| `sandbox-user` | `sandbox123` | **OPERATOR** | **1 VM**:<br>• `pve-sandbox-dev` (Proxmox) | **Sandbox Tester**: Akses minimal terisolasi hanya ke 1 VM testing pada Proxmox VE. |
+| `admin` | `admin123` | **ADMIN** | **Global Access** | **Cloud Administrator**: Hak penuh mendaftarkan cluster, menambah node fisik, membuat VM, manajemen user & kuota tenant. |
 
-> 💡 **Cara Menguji Isolasi Akses:**
-> 1. Buka [http://localhost:3000](http://localhost:3000).
-> 2. Login sebagai `operator` (Password: `operator123`) -> Perhatikan hanya **3 VM** yang tampil di dashboard.
-> 3. Logout, lalu login sebagai `devops-lead` (Password: `devops123`) -> Perhatikan hanya **4 VM Kubernetes & CI/CD** yang tampil.
-> 4. Logout, lalu login sebagai `sandbox-user` (Password: `sandbox123`) -> Perhatikan hanya **1 VM Sandbox** yang tampil.
-> 5. Login kembali sebagai `admin` (Password: `admin123`) -> Seluruh **12 VM** tampil, tombol **"New Virtual Machine"** aktif, dan tab **"Users & VM Access"** terbuka.
+---
+
+## 🌐 Dynamic Cluster & Node Management (Fitur Baru)
+
+Pada mode development virgin ini, Anda dapat mendaftarkan cluster fisik Anda sendiri langsung dari UI:
+1. **Connect Cluster**: Buka tab **"Clusters"**, klik tombol **"+ Connect Cluster"**, pilih tipe (`PROXMOX` atau `VMWARE`), masukkan URL endpoint (misal `https://192.168.1.100:8006`).
+2. **Add Compute Node**: Di dalam kartu cluster yang telah didaftarkan, klik tombol **"+ Add Node"** untuk mendaftarkan host fisik (IP, CPU Cores, RAM GB, Disk GB).
+3. **Reset to Virgin**: Terdapat tombol **"Reset to Virgin"** jika sewaktu-waktu Anda ingin mengosongkan kembali seluruh data dummy ke keadaan bersih.
 
 ---
 

@@ -251,6 +251,7 @@ export default function App() {
           <ClusterTopology 
             clusters={clusters} 
             onRefresh={loadData} 
+            showToast={showToast}
           />
         )}
 

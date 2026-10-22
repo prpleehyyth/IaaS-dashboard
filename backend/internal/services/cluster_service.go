@@ -2,10 +2,15 @@ package services
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
+
 	"iaas-dashboard/internal/database"
 	"iaas-dashboard/internal/drivers"
 	"iaas-dashboard/internal/models"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -16,26 +21,40 @@ type ClusterService struct {
 }
 
 func NewClusterService(db *sqlx.DB, redis *database.RedisClient, driverFactory *drivers.DriverFactory) *ClusterService {
-	return &ClusterService{
+	svc := &ClusterService{
 		db:            db,
 		redis:         redis,
 		driverFactory: driverFactory,
 	}
+	svc.EnsureSchema(context.Background())
+	return svc
+}
+
+func (s *ClusterService) EnsureSchema(ctx context.Context) {
+	migrations := []string{
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_user VARCHAR(150);`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_secret TEXT;`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS insecure_ssl BOOLEAN DEFAULT true;`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS version VARCHAR(50);`,
+	}
+	for _, m := range migrations {
+		_, _ = s.db.ExecContext(ctx, m)
+	}
 }
 
 func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.Cluster, error) {
-	var clusters []models.Cluster
+	s.EnsureSchema(ctx)
+	clusters := []models.Cluster{}
 	err := s.db.SelectContext(ctx, &clusters, `SELECT * FROM clusters ORDER BY type DESC, name ASC`)
 	if err != nil {
-		return nil, err
+		return clusters, err
 	}
 
 	for i := range clusters {
-		var nodes []models.Node
+		nodes := []models.Node{}
 		err := s.db.SelectContext(ctx, &nodes, `SELECT * FROM nodes WHERE cluster_id = $1 ORDER BY name ASC`, clusters[i].ID)
 		if err == nil {
-			// Update node stats dynamically via driver
-			driver := s.driverFactory.GetDriver(clusters[i].Type)
+			driver := s.driverFactory.GetDriverForCluster(&clusters[i])
 			for j := range nodes {
 				updatedNode, _ := driver.RefreshNodeStats(ctx, &clusters[i], &nodes[j])
 				if updatedNode != nil {
@@ -43,6 +62,8 @@ func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.
 				}
 			}
 			clusters[i].Nodes = nodes
+		} else {
+			clusters[i].Nodes = []models.Node{}
 		}
 	}
 
@@ -50,19 +71,217 @@ func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.
 }
 
 func (s *ClusterService) GetClusterByID(ctx context.Context, clusterID string) (*models.Cluster, error) {
+	s.EnsureSchema(ctx)
 	var cluster models.Cluster
 	err := s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, clusterID)
 	if err != nil {
 		return nil, err
 	}
 
-	var nodes []models.Node
+	nodes := []models.Node{}
 	err = s.db.SelectContext(ctx, &nodes, `SELECT * FROM nodes WHERE cluster_id = $1 ORDER BY name ASC`, clusterID)
 	if err == nil {
+		cluster.Nodes = nodes
+	} else {
+		cluster.Nodes = []models.Node{}
+	}
+
+	return &cluster, nil
+}
+
+func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClusterRequest) (*models.Cluster, error) {
+	s.EnsureSchema(ctx)
+	if req.ID == "" {
+		req.ID = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
+	}
+	query := `
+		INSERT INTO clusters (id, name, type, datacenter, endpoint, auth_user, auth_secret, insecure_ssl, status, total_cpu_cores, total_ram_gb, total_storage_tb, description)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ONLINE', $9, $10, $11, $12)
+		RETURNING *
+	`
+	var cluster models.Cluster
+	err := s.db.GetContext(ctx, &cluster, query,
+		req.ID, req.Name, req.Type, req.Datacenter, req.Endpoint,
+		req.AuthUser, req.AuthSecret, req.InsecureSSL,
+		req.TotalCPUCores, req.TotalRAMGB, req.TotalStorageTB, req.Description,
+	)
+	if err != nil {
+		return nil, err
+	}
+	cluster.Nodes = []models.Node{}
+
+	// If AutoDiscover is checked, query the hypervisor immediately!
+	if req.AutoDiscover {
+		_, _ = s.SyncCluster(ctx, cluster.ID)
+		_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, cluster.ID)
+		var nodes []models.Node
+		_ = s.db.SelectContext(ctx, &nodes, `SELECT * FROM nodes WHERE cluster_id = $1 ORDER BY name ASC`, cluster.ID)
 		cluster.Nodes = nodes
 	}
 
 	return &cluster, nil
+}
+
+func (s *ClusterService) DeleteCluster(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM clusters WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return errors.New("cluster not found")
+	}
+	return nil
+}
+
+func (s *ClusterService) AddNodeToCluster(ctx context.Context, clusterID string, req models.CreateNodeRequest) (*models.Node, error) {
+	if req.ID == "" {
+		req.ID = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
+	}
+	query := `
+		INSERT INTO nodes (id, cluster_id, name, ip_address, status, cpu_model, cpu_cores, cpu_usage_pct, ram_total_gb, ram_usage_gb, storage_total_gb, storage_usage_gb, uptime_seconds)
+		VALUES ($1, $2, $3, $4, 'READY', $5, $6, 0.0, $7, 0.0, $8, 0.0, 0)
+		RETURNING *
+	`
+	var node models.Node
+	err := s.db.GetContext(ctx, &node, query,
+		req.ID, clusterID, req.Name, req.IPAddress, req.CPUModel, req.CPUCores, req.RAMTotalGB, req.StorageTotalGB,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update cluster capacity summaries
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE clusters SET 
+			total_cpu_cores = (SELECT COALESCE(SUM(cpu_cores), 0) FROM nodes WHERE cluster_id = $1),
+			total_ram_gb = (SELECT COALESCE(SUM(ram_total_gb), 0) FROM nodes WHERE cluster_id = $1),
+			total_storage_tb = (SELECT COALESCE(SUM(storage_total_gb), 0)::numeric / 1000 FROM nodes WHERE cluster_id = $1)
+		WHERE id = $1
+	`, clusterID)
+
+	return &node, nil
+}
+
+func (s *ClusterService) DeleteNode(ctx context.Context, clusterID, nodeID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE id = $1 AND cluster_id = $2`, nodeID, clusterID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return errors.New("node not found")
+	}
+
+	// Update cluster capacity summaries
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE clusters SET 
+			total_cpu_cores = (SELECT COALESCE(SUM(cpu_cores), 0) FROM nodes WHERE cluster_id = $1),
+			total_ram_gb = (SELECT COALESCE(SUM(ram_total_gb), 0) FROM nodes WHERE cluster_id = $1),
+			total_storage_tb = (SELECT COALESCE(SUM(storage_total_gb), 0)::numeric / 1000 FROM nodes WHERE cluster_id = $1)
+		WHERE id = $1
+	`, clusterID)
+
+	return nil
+}
+
+func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.TestClusterConnectionRequest) (*models.TestClusterConnectionResponse, error) {
+	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, req.AuthUser, req.AuthSecret, req.InsecureSSL, req.Datacenter)
+	testCluster := &models.Cluster{
+		ID:          "test-cluster",
+		Type:        req.Type,
+		Endpoint:    req.Endpoint,
+		Datacenter:  req.Datacenter,
+		AuthUser:    req.AuthUser,
+		AuthSecret:  req.AuthSecret,
+		InsecureSSL: req.InsecureSSL,
+	}
+	return driver.TestConnection(ctx, testCluster)
+}
+
+func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*models.Cluster, error) {
+	var cluster models.Cluster
+	if err := s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, clusterID); err != nil {
+		return nil, fmt.Errorf("cluster not found: %w", err)
+	}
+
+	driver := s.driverFactory.GetDriverForCluster(&cluster)
+
+	// 1. Discover Nodes
+	discoveredNodes, err := driver.DiscoverNodes(ctx, &cluster)
+	if err == nil && len(discoveredNodes) > 0 {
+		for _, n := range discoveredNodes {
+			query := `
+				INSERT INTO nodes (id, cluster_id, name, ip_address, status, cpu_model, cpu_cores, cpu_usage_pct, ram_total_gb, ram_usage_gb, storage_total_gb, storage_usage_gb, uptime_seconds)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+				ON CONFLICT (id) DO UPDATE SET
+					cluster_id = EXCLUDED.cluster_id,
+					name = EXCLUDED.name,
+					ip_address = EXCLUDED.ip_address,
+					status = EXCLUDED.status,
+					cpu_cores = EXCLUDED.cpu_cores,
+					ram_total_gb = EXCLUDED.ram_total_gb,
+					storage_total_gb = EXCLUDED.storage_total_gb,
+					uptime_seconds = EXCLUDED.uptime_seconds
+			`
+			_, _ = s.db.ExecContext(ctx, query,
+				n.ID, cluster.ID, n.Name, n.IPAddress, n.Status, n.CPUModel, n.CPUCores, n.CPUUsagePct, n.RAMTotalGB, n.RAMUsageGB, n.StorageTotalGB, n.StorageUsageGB, n.UptimeSeconds,
+			)
+		}
+	}
+
+	// 2. Discover VMs
+	discoveredVMs, err := driver.DiscoverVMs(ctx, &cluster)
+	if err == nil && len(discoveredVMs) > 0 {
+		var tenantID uuid.UUID
+		_ = s.db.GetContext(ctx, &tenantID, `SELECT id FROM tenants LIMIT 1`)
+
+		for _, vm := range discoveredVMs {
+			query := `
+				INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+				ON CONFLICT (id) DO NOTHING
+			`
+			_, _ = s.db.ExecContext(ctx, query,
+				vm.ID, tenantID, cluster.ID, vm.NodeID, cluster.Type, vm.Name, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.VMID, vm.OSType,
+			)
+		}
+	}
+
+	// 3. Update Cluster Totals
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE clusters SET 
+			status = 'ONLINE',
+			total_cpu_cores = (SELECT COALESCE(SUM(cpu_cores), 0) FROM nodes WHERE cluster_id = $1),
+			total_ram_gb = (SELECT COALESCE(SUM(ram_total_gb), 0) FROM nodes WHERE cluster_id = $1),
+			total_storage_tb = (SELECT COALESCE(SUM(storage_total_gb), 0)::numeric / 1000 FROM nodes WHERE cluster_id = $1)
+		WHERE id = $1
+	`, cluster.ID)
+
+	return s.GetClusterByID(ctx, cluster.ID)
+}
+
+func (s *ClusterService) ResetToVirgin(ctx context.Context) error {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	queries := []string{
+		`TRUNCATE TABLE resource_metering_samples, user_vm_assignments, vm_activity_logs, virtual_machines, nodes, clusters CASCADE;`,
+		`DELETE FROM users WHERE username != 'admin';`,
+		`DELETE FROM tenants WHERE id != 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';`,
+		`UPDATE tenants SET name = 'Default Organization', slug = 'default-org', description = 'Primary Development Tenant';`,
+	}
+
+	for _, q := range queries {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.DashboardSummaryResponse, error) {
@@ -114,7 +333,7 @@ func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.Dashb
 	}
 
 	// Fetch recent 10 activity logs
-	var recentLogs []models.VMActivityLog
+	recentLogs := []models.VMActivityLog{}
 	logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
                         u.username, COALESCE(v.name, 'N/A') as vm_name
                  FROM vm_activity_logs l

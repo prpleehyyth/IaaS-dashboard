@@ -29,4 +29,10 @@ type HypervisorDriver interface {
 
 	// Remote Console
 	GetConsoleTicket(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string) (*ConsoleConnectionInfo, error)
+
+	// Connectivity & Auto-Discovery
+	TestConnection(ctx context.Context, cluster *models.Cluster) (*models.TestClusterConnectionResponse, error)
+	DiscoverNodes(ctx context.Context, cluster *models.Cluster) ([]models.Node, error)
+	DiscoverVMs(ctx context.Context, cluster *models.Cluster) ([]models.VirtualMachine, error)
 }
+

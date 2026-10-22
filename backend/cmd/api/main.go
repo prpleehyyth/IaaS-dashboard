@@ -75,13 +75,9 @@ func main() {
 	r.GET("/api/v1/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
-			"service": "IaaS Multi-Tenant Cloud Controller",
+			"mode":    cfg.HypervisorMode,
+			"service": "CloudForge Multi-Tenant Hybrid Cloud Controller",
 			"time":    time.Now().Format(time.RFC3339),
-			"clusters_managed": gin.H{
-				"vmware_clusters":  3,
-				"proxmox_clusters": 1,
-				"total_nodes":      12,
-			},
 		})
 	})
 
@@ -112,6 +108,14 @@ func main() {
 		adminOnly := api.Group("")
 		adminOnly.Use(middleware.RequireRole(models.RoleAdmin))
 		{
+			// Cluster & Node Fleet Management (Admin Only)
+			adminOnly.POST("/clusters", clusterHandler.CreateCluster)
+			adminOnly.POST("/clusters/test-connection", clusterHandler.TestConnection)
+			adminOnly.POST("/clusters/:id/sync", clusterHandler.SyncCluster)
+			adminOnly.DELETE("/clusters/:id", clusterHandler.DeleteCluster)
+			adminOnly.POST("/clusters/:id/nodes", clusterHandler.AddNode)
+			adminOnly.DELETE("/clusters/:id/nodes/:nodeId", clusterHandler.DeleteNode)
+
 			// VM Lifecycle Management (Admin Only)
 			adminOnly.POST("/vms", vmHandler.CreateVM)
 			adminOnly.PUT("/vms/:id", vmHandler.UpdateVM)
@@ -126,6 +130,9 @@ func main() {
 			adminOnly.POST("/users", userHandler.CreateUser)
 			adminOnly.PUT("/users/:id/vms", userHandler.AssignVMs)
 			adminOnly.DELETE("/users/:id", userHandler.DeleteUser)
+
+			// System Reset (Admin Only)
+			adminOnly.POST("/system/reset-virgin", clusterHandler.ResetVirgin)
 		}
 	}
 

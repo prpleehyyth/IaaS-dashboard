@@ -103,3 +103,22 @@ func (s *SimulatorDriver) GetConsoleTicket(ctx context.Context, cluster *models.
 		WebSocketURL: fmt.Sprintf("/api/v1/vms/%d/console/ws?ticket=%s", vmid, ticket),
 	}, nil
 }
+
+func (s *SimulatorDriver) TestConnection(ctx context.Context, cluster *models.Cluster) (*models.TestClusterConnectionResponse, error) {
+	return &models.TestClusterConnectionResponse{
+		Success:   true,
+		Message:   fmt.Sprintf("Simulator active: Connected to simulated %s cluster endpoint (%s)", cluster.Type, cluster.Endpoint),
+		Version:   "Hypervisor Simulator v2.0",
+		NodeCount: 3,
+		VMCount:   0,
+	}, nil
+}
+
+func (s *SimulatorDriver) DiscoverNodes(ctx context.Context, cluster *models.Cluster) ([]models.Node, error) {
+	return []models.Node{}, nil
+}
+
+func (s *SimulatorDriver) DiscoverVMs(ctx context.Context, cluster *models.Cluster) ([]models.VirtualMachine, error) {
+	return []models.VirtualMachine{}, nil
+}
+

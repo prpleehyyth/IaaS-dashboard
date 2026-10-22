@@ -93,6 +93,10 @@ type Cluster struct {
 	Type           HypervisorType `json:"type" db:"type"`
 	Datacenter     string         `json:"datacenter" db:"datacenter"`
 	Endpoint       string         `json:"endpoint" db:"endpoint"`
+	AuthUser       string         `json:"auth_user,omitempty" db:"auth_user"`
+	AuthSecret     string         `json:"auth_secret,omitempty" db:"auth_secret"`
+	InsecureSSL    bool           `json:"insecure_ssl" db:"insecure_ssl"`
+	Version        string         `json:"version,omitempty" db:"version"`
 	Status         string         `json:"status" db:"status"`
 	TotalCPUCores  int            `json:"total_cpu_cores" db:"total_cpu_cores"`
 	TotalRAMGB     int            `json:"total_ram_gb" db:"total_ram_gb"`
@@ -212,6 +216,51 @@ type UpdateVMRequest struct {
 	CPUCores int    `json:"cpu_cores" binding:"omitempty,min=1,max=64"`
 	RAMMB    int    `json:"ram_mb" binding:"omitempty,min=512"`
 	DiskGB   int    `json:"disk_gb" binding:"omitempty,min=10"`
+}
+
+type CreateClusterRequest struct {
+	ID             string         `json:"id"`
+	Name           string         `json:"name" binding:"required"`
+	Type           HypervisorType `json:"type" binding:"required"`
+	Datacenter     string         `json:"datacenter" binding:"required"`
+	Endpoint       string         `json:"endpoint" binding:"required"`
+	AuthUser       string         `json:"auth_user"`
+	AuthSecret     string         `json:"auth_secret"`
+	InsecureSSL    bool           `json:"insecure_ssl"`
+	TotalCPUCores  int            `json:"total_cpu_cores"`
+	TotalRAMGB     int            `json:"total_ram_gb"`
+	TotalStorageTB float64        `json:"total_storage_tb"`
+	Description    string         `json:"description"`
+	AutoDiscover   bool           `json:"auto_discover"`
+}
+
+type TestClusterConnectionRequest struct {
+	Type        HypervisorType `json:"type" binding:"required"`
+	Endpoint    string         `json:"endpoint" binding:"required"`
+	AuthUser    string         `json:"auth_user"`
+	AuthSecret  string         `json:"auth_secret"`
+	InsecureSSL bool           `json:"insecure_ssl"`
+	Datacenter  string         `json:"datacenter"`
+}
+
+type TestClusterConnectionResponse struct {
+	Success         bool    `json:"success"`
+	Message         string  `json:"message"`
+	Version         string  `json:"version,omitempty"`
+	NodeCount       int     `json:"node_count"`
+	VMCount         int     `json:"vm_count"`
+	DiscoveredNodes []Node  `json:"discovered_nodes,omitempty"`
+}
+
+
+type CreateNodeRequest struct {
+	ID             string `json:"id"`
+	Name           string `json:"name" binding:"required"`
+	IPAddress      string `json:"ip_address" binding:"required"`
+	CPUModel       string `json:"cpu_model"`
+	CPUCores       int    `json:"cpu_cores" binding:"required"`
+	RAMTotalGB     int    `json:"ram_total_gb" binding:"required"`
+	StorageTotalGB int    `json:"storage_total_gb" binding:"required"`
 }
 
 type VMActionRequest struct {

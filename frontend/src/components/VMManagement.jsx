@@ -178,8 +178,16 @@ export default function VMManagement({
           <tbody>
             {filteredVMs.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '40px' }}>
-                  No virtual machines found matching current filter criteria.
+                <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '50px 20px' }}>
+                  <HardDrive size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px auto' }} />
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
+                    {vms.length === 0 ? 'No Virtual Machines Deployed (Virgin State)' : 'No virtual machines match filter criteria'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    {vms.length === 0 
+                      ? (isAdmin ? 'Deploy your first virtual machine vessel using the "+ Provision Virtual Machine" button above.' : 'No virtual machines are currently assigned to your account.')
+                      : 'Try adjusting your search terms or cluster filter.'}
+                  </div>
                 </td>
               </tr>
             ) : (
