@@ -1,73 +1,72 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  X, 
-  Maximize2, 
-  Minimize2, 
-  Terminal, 
-  RotateCcw, 
-  ShieldCheck, 
-  Copy,
-  Check
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Terminal, Maximize2, Minimize2, X, RefreshCw, Copy, Check } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function VMConsoleModal({ vm, onClose }) {
   const [session, setSession] = useState(null);
   const [terminalOutput, setTerminalOutput] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('CONNECTING');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('CONNECTING');
   const [copied, setCopied] = useState(false);
-  
   const wsRef = useRef(null);
   const terminalRef = useRef(null);
-  const inputBufferRef = useRef('');
 
   useEffect(() => {
     let isMounted = true;
 
     async function initConsole() {
       try {
-        setTerminalOutput('\x1b[1;34m[Console Agent] Initializing secure connection ticket...\x1b[0m\r\n');
-        const sess = await api.requestConsoleSession(vm.id);
+        setTerminalOutput(`\x1b[1;34m[CloudForge Maritime IaaS]\x1b[0m Initializing secure VNC/Serial web tunnel to vessel '${vm.name}'...\r\n`);
+        
+        // Request console session from backend
+        const sess = await api.createConsoleSession(vm.id);
         if (!isMounted) return;
         setSession(sess);
 
-        // Establish WebSocket connection
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/v1/vms/${vm.id}/console/ws?ticket=${sess.ticket}`;
+        setTerminalOutput(prev => prev + `\x1b[1;32m[OK]\x1b[0m Direct tunnel provisioned via hypervisor ${vm.hypervisor_type} on host '${vm.node_id}'.\r\n`);
+        setTerminalOutput(prev => prev + `\x1b[1;33m[Connecting]\x1b[0m Establishing multiplexed WebSocket telemetry stream...\r\n\r\n`);
 
+        // Connect to WebSocket
+        const wsUrl = api.getConsoleWsUrl(sess.token);
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (!isMounted) return;
           setConnectionStatus('CONNECTED');
+          setTerminalOutput(prev => prev + `\x1b[1;32m*** NAVAL TERMINAL CONNECTED (${vm.os_type}) ***\x1b[0m\r\nType commands or use quick action buttons below.\r\n\r\n`);
+          if (terminalRef.current) {
+            terminalRef.current.focus();
+          }
         };
 
         ws.onmessage = (event) => {
           if (!isMounted) return;
-          // Strip or translate basic ANSI escape codes for display
-          setTerminalOutput((prev) => prev + event.data);
-        };
-
-        ws.onerror = (err) => {
-          console.error("Console WebSocket Error:", err);
-          if (!isMounted) return;
-          setConnectionStatus('ERROR');
-          setTerminalOutput((prev) => prev + '\r\n\x1b[1;31m[Console Error] WebSocket connection failed.\x1b[0m\r\n');
+          setTerminalOutput(prev => prev + event.data);
+          // Auto-scroll
+          if (terminalRef.current) {
+            terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+          }
         };
 
         ws.onclose = () => {
           if (!isMounted) return;
           setConnectionStatus('DISCONNECTED');
-          setTerminalOutput((prev) => prev + '\r\n\x1b[1;33m[Console Closed] Session terminated.\x1b[0m\r\n');
+          setTerminalOutput(prev => prev + '\r\n\x1b[1;31m[Connection Terminated by Peer]\x1b[0m Remote console session closed.\r\n');
+        };
+
+        ws.onerror = (err) => {
+          if (!isMounted) return;
+          console.error("Terminal WebSocket error:", err);
+          setConnectionStatus('ERROR');
+          setTerminalOutput(prev => prev + '\r\n\x1b[1;31m[Error]\x1b[0m WebSocket communication failure.\r\n');
         };
 
       } catch (err) {
         if (!isMounted) return;
+        console.error("Failed to initialize console session:", err);
         setConnectionStatus('ERROR');
-        setTerminalOutput(`\r\n\x1b[1;31m[Error] Failed to initialize console: ${err.message}\x1b[0m\r\n`);
+        setTerminalOutput(prev => prev + `\r\n\x1b[1;31m[Failed]\x1b[0m ${err.message || 'Could not establish console tunnel'}\r\n`);
       }
     }
 
@@ -79,40 +78,36 @@ export default function VMConsoleModal({ vm, onClose }) {
         wsRef.current.close();
       }
     };
-  }, [vm.id]);
+  }, [vm]);
 
-  // Scroll to bottom on output change
-  useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-    }
-  }, [terminalOutput]);
-
+  // Handle keystrokes sent to terminal
   const handleKeyDown = (e) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
+    // Send special keys or regular keys
     if (e.key === 'Enter') {
       wsRef.current.send('\r');
-      inputBufferRef.current = '';
-      e.preventDefault();
     } else if (e.key === 'Backspace') {
       wsRef.current.send('\b');
-      e.preventDefault();
     } else if (e.key === 'Tab') {
+      e.preventDefault();
       wsRef.current.send('\t');
-      e.preventDefault();
-    } else if (e.ctrlKey && e.key === 'c') {
-      wsRef.current.send(String.fromCharCode(3));
-      e.preventDefault();
-    } else if (e.key.length === 1 && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       wsRef.current.send(e.key);
-      e.preventDefault();
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+      wsRef.current.send('\x03'); // ETX
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'd') {
+      wsRef.current.send('\x04'); // EOT
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'l') {
+      wsRef.current.send('\x0c'); // Form Feed / Clear
     }
   };
 
+  // Quick Command buttons
   const sendQuickCommand = (cmd) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(cmd + '\r');
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(cmd + '\r');
+    }
   };
 
   const copyIP = () => {
@@ -125,13 +120,12 @@ export default function VMConsoleModal({ vm, onClose }) {
 
   // Convert ANSI escape sequences to HTML spans
   const renderAnsi = (text) => {
-    // Basic ANSI color mapper
     let clean = text
-      .replace(/\x1b\[1;32m/g, '<span style="color:#10b981;font-weight:bold;">')
-      .replace(/\x1b\[1;34m/g, '<span style="color:#60a5fa;font-weight:bold;">')
-      .replace(/\x1b\[1;36m/g, '<span style="color:#00f2fe;font-weight:bold;">')
+      .replace(/\x1b\[1;32m/g, '<span style="color:#34d399;font-weight:bold;">')
+      .replace(/\x1b\[1;34m/g, '<span style="color:#38bdf8;font-weight:bold;">')
+      .replace(/\x1b\[1;36m/g, '<span style="color:#0ea5e9;font-weight:bold;">')
       .replace(/\x1b\[1;33m/g, '<span style="color:#fbbf24;font-weight:bold;">')
-      .replace(/\x1b\[1;31m/g, '<span style="color:#f43f5e;font-weight:bold;">')
+      .replace(/\x1b\[1;31m/g, '<span style="color:#fb7185;font-weight:bold;">')
       .replace(/\x1b\[0m/g, '</span>')
       .replace(/\x1b\[2J\x1b\[H/g, ''); // Clear code
     return { __html: clean };
@@ -153,11 +147,11 @@ export default function VMConsoleModal({ vm, onClose }) {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Terminal size={15} color="var(--accent-cyan)" />
-              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff' }}>
+              <Terminal size={15} color="#38bdf8" />
+              <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#ffffff' }}>
                 {vm.name}
               </span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
                 ({vm.hypervisor_type} • {session?.protocol ? session.protocol.toUpperCase() : 'VNC/WebMKS'})
               </span>
             </div>
@@ -167,7 +161,7 @@ export default function VMConsoleModal({ vm, onClose }) {
             {/* Status Dot */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className={`status-dot ${connectionStatus === 'CONNECTED' ? 'online' : connectionStatus === 'CONNECTING' ? 'stopping' : 'error'}`}></span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: connectionStatus === 'CONNECTED' ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: connectionStatus === 'CONNECTED' ? '#34d399' : 'var(--text-muted)' }}>
                 {connectionStatus}
               </span>
             </div>
@@ -176,10 +170,10 @@ export default function VMConsoleModal({ vm, onClose }) {
             <button 
               className="btn btn-secondary btn-sm" 
               onClick={copyIP} 
-              style={{ fontSize: '0.75rem', padding: '4px 8px' }}
-              title="Copy VM IP"
+              style={{ fontSize: '0.75rem', padding: '4px 10px', color: '#ffffff' }}
+              title="Copy Vessel IP"
             >
-              {copied ? <Check size={12} color="var(--accent-emerald)" /> : <Copy size={12} />}
+              {copied ? <Check size={12} color="#34d399" /> : <Copy size={12} />}
               <span>{vm.ip_address}</span>
             </button>
 
@@ -203,14 +197,14 @@ export default function VMConsoleModal({ vm, onClose }) {
         </div>
 
         {/* Quick Commands Ribbon */}
-        <div style={{ background: '#090d16', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>QUICK COMMANDS:</span>
+        <div style={{ background: '#051122', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)', overflowX: 'auto' }}>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontWeight: 600 }}>NAVAL COMMANDS:</span>
           {['uname -a', 'uptime', 'free -h', 'ip a', 'df -h', 'top', 'clear'].map((cmd) => (
             <button
               key={cmd}
               onClick={() => sendQuickCommand(cmd)}
               className="btn btn-secondary btn-sm"
-              style={{ fontSize: '0.72rem', padding: '3px 8px', background: 'rgba(255,255,255,0.04)' }}
+              style={{ fontSize: '0.72rem', padding: '3px 9px', background: 'rgba(2, 132, 199, 0.15)', borderColor: 'rgba(56, 189, 248, 0.25)' }}
             >
               {cmd}
             </button>
@@ -218,9 +212,9 @@ export default function VMConsoleModal({ vm, onClose }) {
           <button
             onClick={() => sendQuickCommand('reboot')}
             className="btn btn-secondary btn-sm"
-            style={{ fontSize: '0.72rem', padding: '3px 8px', color: 'var(--accent-rose)', marginLeft: 'auto' }}
+            style={{ fontSize: '0.72rem', padding: '3px 9px', color: '#fb7185', borderColor: 'rgba(244, 63, 94, 0.35)', marginLeft: 'auto' }}
           >
-            Send Reboot
+            Send Reboot Signal
           </button>
         </div>
 

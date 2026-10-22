@@ -72,9 +72,9 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
       <div className="modal-content" style={{ maxWidth: '640px' }}>
         <div className="modal-header">
           <div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Deploy New Virtual Machine</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-              Administrator Provisioning Engine (VMware vSphere & Proxmox VE)
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Deploy New Fleet Vessel</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Admiralty Provisioning Engine (VMware vSphere & Proxmox VE)
             </p>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ padding: '6px' }}>
@@ -85,7 +85,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {error && (
-              <div style={{ background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '10px 14px', borderRadius: '8px', color: '#fb7185', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '8px', color: '#dc2626', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertCircle size={16} />
                 <span>{error}</span>
               </div>
@@ -93,11 +93,11 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
             {/* VM Name */}
             <div className="form-group">
-              <label className="form-label">Virtual Machine Hostname / Label</label>
+              <label className="form-label">Virtual Machine Vessel Name / Tag</label>
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="e.g. k8s-worker-03 or postgres-standby"
+                placeholder="e.g. naval-sentinel-01 or db-primary-cluster"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -152,8 +152,8 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
             </div>
 
             {/* Hardware Specs Range Sliders */}
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)', marginTop: '12px' }}>
-              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fff', marginBottom: '14px' }}>
+            <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid var(--border-subtle)', marginTop: '14px' }}>
+              <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '14px' }}>
                 Hardware Resource Allotment
               </div>
 
@@ -161,7 +161,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>vCPU Compute Cores:</span>
-                  <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{cpuCores} vCPU</span>
+                  <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{cpuCores} vCPU</span>
                 </div>
                 <input 
                   type="range" 
@@ -169,7 +169,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   max="32" 
                   value={cpuCores} 
                   onChange={(e) => setCpuCores(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-cyan)' }}
+                  style={{ width: '100%', accentColor: 'var(--ocean-blue)' }}
                 />
               </div>
 
@@ -177,7 +177,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>RAM Memory (GB):</span>
-                  <span style={{ color: 'var(--accent-emerald)', fontWeight: 700 }}>{ramGB} GB ({ramGB * 1024} MB)</span>
+                  <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{ramGB} GB ({ramGB * 1024} MB)</span>
                 </div>
                 <input 
                   type="range" 
@@ -185,7 +185,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   max="64" 
                   value={ramGB} 
                   onChange={(e) => setRamGB(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-emerald)' }}
+                  style={{ width: '100%', accentColor: '#1e3a8a' }}
                 />
               </div>
 
@@ -193,16 +193,16 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Storage Disk Volume:</span>
-                  <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>{diskGB} GB NVMe/SAN</span>
+                  <span style={{ color: '#b45309', fontWeight: 700 }}>{diskGB} GB NVMe/SAN</span>
                 </div>
                 <input 
                   type="range" 
                   min="10" 
                   max="500" 
-                  step="10"
+                  step="10" 
                   value={diskGB} 
                   onChange={(e) => setDiskGB(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-amber)' }}
+                  style={{ width: '100%', accentColor: 'var(--accent-gold)' }}
                 />
               </div>
             </div>

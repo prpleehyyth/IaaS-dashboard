@@ -39,9 +39,9 @@ export default function TenantManagement({ tenants, onRefresh }) {
 
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#fff' }}>Multi-Tenant Organizations & Quotas</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>
+      <div style={{ marginBottom: '26px' }}>
+        <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Maritime Tenant Fleets & Quotas</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
           Enforce multi-tenant resource boundaries, hard limits, and virtual datacenter quotas.
         </p>
       </div>
@@ -54,16 +54,26 @@ export default function TenantManagement({ tenants, onRefresh }) {
           const vmsPct = Math.round((tenant.used_vms / tenant.max_vms) * 100);
 
           return (
-            <div key={tenant.id} className="glass-panel" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(0, 242, 254, 0.15)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Building2 size={22} />
+            <div key={tenant.id} className="glass-panel" style={{ padding: '26px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ 
+                    width: '44px', 
+                    height: '44px', 
+                    borderRadius: '12px', 
+                    background: '#eff6ff', 
+                    color: '#1e3a8a', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    border: '1px solid #bfdbfe'
+                  }}>
+                    <Building2 size={24} />
                   </div>
                   <div>
-                    <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>{tenant.name}</h2>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>{tenant.name}</h2>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                      Slug: <code style={{ color: 'var(--text-muted)' }}>{tenant.slug}</code> • Status: <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>{tenant.status}</span>
+                      Identifier: <code style={{ color: '#1e3a8a', fontFamily: 'var(--font-mono)' }}>{tenant.slug}</code> • Status: <span style={{ color: '#059669', fontWeight: 700 }}>{tenant.status}</span>
                     </div>
                   </div>
                 </div>
@@ -78,53 +88,67 @@ export default function TenantManagement({ tenants, onRefresh }) {
                 </button>
               </div>
 
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '22px', lineHeight: 1.5 }}>
                 {tenant.description}
               </p>
 
               {/* Quota Progress Meters */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '14px', 
+                background: '#f8fafc', 
+                padding: '18px', 
+                borderRadius: '12px', 
+                border: '1px solid var(--border-subtle)' 
+              }}>
                 {/* VM Count */}
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Virtual Machine Limit</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{tenant.used_vms || 0} / {tenant.max_vms} VMs ({vmsPct}%)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '5px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Vessel Allotment Limit</span>
+                    <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{tenant.used_vms || 0} / {tenant.max_vms} VMs ({vmsPct}%)</span>
                   </div>
-                  <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(vmsPct, 100)}%`, height: '100%', background: 'var(--accent-purple)' }}></div>
+                  <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(vmsPct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #0f172a, #1e3a8a)' }}></div>
                   </div>
                 </div>
 
                 {/* vCPU Cores */}
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}><Cpu size={12} /> vCPU Compute Pool</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{tenant.used_cpu || 0} / {tenant.max_cpu} vCPU ({cpuPct}%)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '5px' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Cpu size={13} color="#1e3a8a" /> vCPU Compute Pool
+                    </span>
+                    <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{tenant.used_cpu || 0} / {tenant.max_cpu} vCPU ({cpuPct}%)</span>
                   </div>
-                  <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(cpuPct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #00f2fe, #3b82f6)' }}></div>
+                  <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(cpuPct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #1e3a8a, #2563eb)' }}></div>
                   </div>
                 </div>
 
                 {/* RAM (GB) */}
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={12} /> RAM Allocation</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{tenant.used_ram_gb || 0} / {tenant.max_ram_gb} GB ({ramPct}%)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '5px' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Database size={13} color="#1e3a8a" /> RAM Allocation
+                    </span>
+                    <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{tenant.used_ram_gb || 0} / {tenant.max_ram_gb} GB ({ramPct}%)</span>
                   </div>
-                  <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(ramPct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+                  <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(ramPct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #0f172a, #1e3a8a)' }}></div>
                   </div>
                 </div>
 
                 {/* Storage (GB) */}
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}><HardDrive size={12} /> Storage Allotment</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{tenant.used_storage_gb || 0} / {tenant.max_storage_gb} GB ({storagePct}%)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '5px' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <HardDrive size={13} color="#b45309" /> Storage Pool Limit
+                    </span>
+                    <span style={{ color: '#b45309', fontWeight: 700 }}>{tenant.used_storage_gb || 0} / {tenant.max_storage_gb} GB ({storagePct}%)</span>
                   </div>
-                  <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(storagePct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b, #fbbf24)' }}></div>
+                  <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(storagePct, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #b45309, #d97706)' }}></div>
                   </div>
                 </div>
               </div>
@@ -136,11 +160,11 @@ export default function TenantManagement({ tenants, onRefresh }) {
       {/* Edit Quota Dialog */}
       {editingTenant && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
+          <div className="modal-content" style={{ maxWidth: '490px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Modify Tenant Quotas</h2>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Modify Tenant Quotas</h2>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                   {editingTenant.name}
                 </p>
               </div>
@@ -209,7 +233,7 @@ export default function TenantManagement({ tenants, onRefresh }) {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? 'Updating...' : 'Save Quotas'}
+                  {isSaving ? 'Updating...' : 'Save Fleet Quotas'}
                 </button>
               </div>
             </form>

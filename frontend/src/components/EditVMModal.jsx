@@ -34,8 +34,8 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
       <div className="modal-content" style={{ maxWidth: '540px' }}>
         <div className="modal-header">
           <div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Reconfigure VM Specs</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Reconfigure Vessel Specifications</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
               Modify vCPU, Memory, and Storage for {vm.name}
             </p>
           </div>
@@ -47,14 +47,14 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {error && (
-              <div style={{ background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '10px 14px', borderRadius: '8px', color: '#fb7185', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '8px', color: '#dc2626', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertCircle size={16} />
                 <span>{error}</span>
               </div>
             )}
 
             <div className="form-group">
-              <label className="form-label">Virtual Machine Label</label>
+              <label className="form-label">Virtual Machine Vessel Name</label>
               <input 
                 type="text" 
                 className="form-input" 
@@ -65,12 +65,12 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
             </div>
 
             {/* Spec Sliders */}
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               {/* CPU Cores */}
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>vCPU Compute Cores:</span>
-                  <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{cpuCores} vCPU</span>
+                  <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{cpuCores} vCPU</span>
                 </div>
                 <input 
                   type="range" 
@@ -78,7 +78,7 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
                   max="32" 
                   value={cpuCores} 
                   onChange={(e) => setCpuCores(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-cyan)' }}
+                  style={{ width: '100%', accentColor: 'var(--ocean-blue)' }}
                 />
               </div>
 
@@ -86,7 +86,7 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>RAM Allocation:</span>
-                  <span style={{ color: 'var(--accent-emerald)', fontWeight: 700 }}>{ramGB} GB ({ramGB * 1024} MB)</span>
+                  <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{ramGB} GB ({ramGB * 1024} MB)</span>
                 </div>
                 <input 
                   type="range" 
@@ -94,7 +94,7 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
                   max="64" 
                   value={ramGB} 
                   onChange={(e) => setRamGB(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-emerald)' }}
+                  style={{ width: '100%', accentColor: '#1e3a8a' }}
                 />
               </div>
 
@@ -102,7 +102,7 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Disk Capacity:</span>
-                  <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>{diskGB} GB</span>
+                  <span style={{ color: '#b45309', fontWeight: 700 }}>{diskGB} GB</span>
                 </div>
                 <input 
                   type="range" 
@@ -111,9 +111,9 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
                   step="10"
                   value={diskGB} 
                   onChange={(e) => setDiskGB(e.target.value)}
-                  style={{ width: '100%', accentColor: 'var(--accent-amber)' }}
+                  style={{ width: '100%', accentColor: 'var(--accent-gold)' }}
                 />
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px' }}>
                   * Hypervisor allows dynamic disk expansion (cannot shrink below current {vm.disk_gb} GB).
                 </div>
               </div>

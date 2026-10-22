@@ -181,14 +181,16 @@ export default function App() {
             top: '24px',
             right: '24px',
             zIndex: 1000,
-            background: toast.type === 'error' ? 'linear-gradient(135deg, rgba(160, 30, 60, 0.96), rgba(100, 15, 40, 0.96))' : 'linear-gradient(135deg, rgba(10, 100, 80, 0.96), rgba(6, 70, 55, 0.96))',
-            border: toast.type === 'error' ? '1px solid rgba(224, 54, 90, 0.4)' : '1px solid rgba(0, 178, 178, 0.3)',
-            color: '#fff',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+            background: toast.type === 'error' 
+              ? '#b91c1c' 
+              : '#0f172a',
+            border: toast.type === 'error' ? '1px solid #991b1b' : '1px solid #1e3a8a',
+            color: '#ffffff',
+            padding: '12px 22px',
+            borderRadius: '10px',
+            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.25)',
             fontSize: '0.88rem',
-            fontWeight: 600,
+            fontWeight: 700,
             animation: 'fadeIn 0.2s ease-out'
           }}>
             {toast.message}
@@ -208,13 +210,16 @@ export default function App() {
           top: '24px',
           right: '24px',
           zIndex: 1000,
-          background: toast.type === 'error' ? 'rgba(244, 63, 94, 0.95)' : 'rgba(16, 185, 129, 0.95)',
-          color: '#fff',
-          padding: '12px 20px',
-          borderRadius: '8px',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+          background: toast.type === 'error' 
+            ? '#b91c1c' 
+            : '#0f172a',
+          border: toast.type === 'error' ? '1px solid #991b1b' : '1px solid #1e3a8a',
+          color: '#ffffff',
+          padding: '12px 22px',
+          borderRadius: '10px',
+          boxShadow: '0 10px 30px rgba(15, 23, 42, 0.25)',
           fontSize: '0.88rem',
-          fontWeight: 600,
+          fontWeight: 700,
           display: 'flex',
           alignItems: 'center',
           gap: '8px',

@@ -1,38 +1,33 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  UserPlus, 
-  ShieldCheck, 
-  UserCheck, 
-  HardDrive, 
-  Trash2, 
-  Key, 
-  Check, 
-  X, 
-  AlertCircle,
-  Server
-} from 'lucide-react';
+import { Users, UserPlus, ShieldCheck, UserCheck, Trash2, Key, HardDrive, Check, X, AlertCircle } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function UserManagement({ users, vms, tenants, onRefresh, showToast }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [assigningUser, setAssigningUser] = useState(null);
   const [selectedVMs, setSelectedVMs] = useState([]);
-  
-  // New User Form State
+
+  // Form State for User Creation
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('OPERATOR');
-  const [tenantId, setTenantId] = useState(tenants[0]?.id || '');
+  const [tenantId, setTenantId] = useState(tenants[0]?.id || 'tenant-acme-corp');
   const [initialVMs, setInitialVMs] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const openAssignModal = (user) => {
-    setAssigningUser(user);
-    setSelectedVMs(user.assigned_vm_ids || []);
+  // Open Assign Modal
+  const openAssignModal = async (targetUser) => {
+    setAssigningUser(targetUser);
+    try {
+      const assigned = await api.getUserVMs(targetUser.id);
+      setSelectedVMs(assigned.map(v => v.id));
+    } catch (err) {
+      console.error("Failed to load user's VMs:", err);
+      setSelectedVMs([]);
+    }
   };
 
   const toggleVMSelection = (vmId) => {
@@ -50,11 +45,11 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
   const handleSaveAssignments = async () => {
     try {
       await api.assignVMsToUser(assigningUser.id, selectedVMs);
-      showToast(`Updated VM access permissions for ${assigningUser.username}`);
+      showToast(`Updated VM access privileges for ${assigningUser.username}`);
       setAssigningUser(null);
       await onRefresh();
     } catch (err) {
-      alert("Failed to assign VMs: " + err.message);
+      showToast("Failed to assign VMs: " + err.message, 'error');
     }
   };
 
@@ -62,19 +57,24 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
     e.preventDefault();
     setFormError('');
     setIsSubmitting(true);
+
     try {
-      await api.createUser({
-        username: username.trim(),
-        full_name: fullName.trim(),
-        email: email.trim(),
-        password: password,
-        role: role,
-        tenant_id: tenantId || null,
-        assigned_vms: role === 'OPERATOR' ? initialVMs : [],
+      const newUser = await api.createUser({
+        username,
+        full_name: fullName,
+        email,
+        password,
+        role,
+        tenant_id: tenantId,
       });
-      showToast(`User '${username}' created successfully`);
+
+      // If initial VMs selected for Operator, assign them
+      if (role === 'OPERATOR' && initialVMs.length > 0) {
+        await api.assignVMsToUser(newUser.id, initialVMs);
+      }
+
+      showToast(`User account '${newUser.username}' created successfully`);
       setIsCreateModalOpen(false);
-      // Reset form
       setUsername('');
       setFullName('');
       setEmail('');
@@ -82,45 +82,57 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
       setInitialVMs([]);
       await onRefresh();
     } catch (err) {
-      setFormError(err.message || 'Failed to create user');
+      setFormError(err.message || "Failed to create user account");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteUser = async (user) => {
-    if (!window.confirm(`Are you sure you want to delete user '${user.username}'?`)) return;
+  const handleDeleteUser = async (targetUser) => {
+    if (!window.confirm(`Permanently revoke and delete account '${targetUser.username}'?`)) {
+      return;
+    }
+
     try {
-      await api.deleteUser(user.id);
-      showToast(`User '${user.username}' deleted`);
+      await api.deleteUser(targetUser.id);
+      showToast(`Account '${targetUser.username}' removed`);
       await onRefresh();
     } catch (err) {
-      alert("Cannot delete user: " + err.message);
+      showToast("Failed to delete user: " + err.message, 'error');
     }
   };
 
   return (
     <div>
       {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '26px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#fff' }}>User Access & VM Assignment</h1>
-            <span style={{ fontSize: '0.85rem', background: 'rgba(0, 242, 254, 0.15)', color: 'var(--accent-cyan)', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Maritime Personnel & Vessel Access</h1>
+            <span style={{ 
+              fontSize: '0.82rem', 
+              background: '#eff6ff', 
+              color: '#1e3a8a', 
+              border: '1px solid #bfdbfe', 
+              padding: '4px 12px', 
+              borderRadius: '8px', 
+              fontWeight: 700 
+            }}>
               {users.length} Registered Accounts
             </span>
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>
-            Create cloud administrators or assign virtual machine permissions to VM Operators.
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
+            Authorize fleet officers (Admiralty Admin) or delegate vessel command to VM Operators.
           </p>
         </div>
 
         <button 
           className="btn btn-primary"
           onClick={() => setIsCreateModalOpen(true)}
+          style={{ padding: '10px 20px' }}
         >
-          <UserPlus size={16} />
-          <span>Add New User</span>
+          <UserPlus size={17} strokeWidth={2.4} />
+          <span>Commission New Officer</span>
         </button>
       </div>
 
@@ -129,10 +141,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
         <table>
           <thead>
             <tr>
-              <th>User</th>
-              <th>System Role</th>
-              <th>Organization</th>
-              <th>Accessible Virtual Machines</th>
+              <th>Personnel</th>
+              <th>Rank & Role</th>
+              <th>Division / Organization</th>
+              <th>Authorized Vessels (VMs)</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
@@ -145,22 +157,23 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                 <tr key={u.id}>
                   {/* User info */}
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div style={{ 
-                        width: '36px', 
-                        height: '36px', 
-                        borderRadius: '8px', 
-                        background: isAdmin ? 'rgba(0, 242, 254, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                        color: isAdmin ? 'var(--accent-cyan)' : 'var(--accent-emerald)',
+                        width: '38px', 
+                        height: '38px', 
+                        borderRadius: '10px', 
+                        background: isAdmin ? '#fef3c7' : '#eff6ff',
+                        color: isAdmin ? '#b45309' : '#1e3a8a',
+                        border: isAdmin ? '1px solid #fde68a' : '1px solid #bfdbfe',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>
-                        {isAdmin ? <ShieldCheck size={18} /> : <UserCheck size={18} />}
+                        {isAdmin ? <ShieldCheck size={19} /> : <UserCheck size={19} />}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>{u.full_name || u.username}</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>@{u.username} • {u.email}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{u.full_name || u.username}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{u.username} • {u.email}</div>
                       </div>
                     </div>
                   </td>
@@ -174,29 +187,30 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                   {/* Tenant */}
                   <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    {u.tenant_name || 'Enterprise Cloud'}
+                    {u.tenant_name || 'Fleet Core Command'}
                   </td>
 
                   {/* Accessible VMs */}
                   <td>
                     {isAdmin ? (
-                      <span style={{ fontSize: '0.82rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>
-                        All Infrastructure (12 VMs across 4 Clusters)
+                      <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
+                        All Fleet Vessels (12 VMs across 4 Clusters)
                       </span>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ 
                           fontSize: '0.82rem', 
                           fontWeight: 700, 
-                          color: u.assigned_vm_count > 0 ? 'var(--accent-emerald)' : 'var(--text-dim)',
-                          background: u.assigned_vm_count > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)',
-                          padding: '3px 8px',
+                          color: u.assigned_vm_count > 0 ? '#059669' : 'var(--text-dim)',
+                          background: u.assigned_vm_count > 0 ? '#ecfdf5' : '#ffffff',
+                          border: u.assigned_vm_count > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-subtle)',
+                          padding: '3px 10px',
                           borderRadius: '6px'
                         }}>
-                          {u.assigned_vm_count || 0} Assigned VMs
+                          {u.assigned_vm_count || 0} Assigned Vessels
                         </span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                          (Start, Stop & Console)
+                          (Power & Remote Console)
                         </span>
                       </div>
                     )}
@@ -204,8 +218,8 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                   {/* Status */}
                   <td>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--accent-emerald)' }}>
-                      ● Active
+                    <span style={{ fontSize: '0.82rem', color: '#059669', fontWeight: 700 }}>
+                      ● Active Duty
                     </span>
                   </td>
 
@@ -217,9 +231,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                           className="btn btn-secondary btn-sm"
                           onClick={() => openAssignModal(u)}
                           title="Assign Accessible Virtual Machines"
+                          style={{ color: 'var(--text-main)' }}
                         >
-                          <HardDrive size={13} />
-                          <span>Assign VMs</span>
+                          <HardDrive size={13} color="#1e3a8a" />
+                          <span>Assign Vessels</span>
                         </button>
                       )}
 
@@ -227,7 +242,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                         <button 
                           className="btn btn-danger btn-sm"
                           onClick={() => handleDeleteUser(u)}
-                          title="Delete User"
+                          title="Decommission Account"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -247,9 +262,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Create New Account</h2>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                  Register Cloud Admin or VM Operator with custom VM assignments
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Commission New Fleet Personnel</h2>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Register Admiralty Admin or VM Operator with custom vessel assignments
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setIsCreateModalOpen(false)} style={{ padding: '6px' }}>
@@ -260,7 +275,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
             <form onSubmit={handleCreateUser}>
               <div className="modal-body">
                 {formError && (
-                  <div style={{ background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '10px 14px', borderRadius: '8px', color: '#fb7185', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '8px', color: '#dc2626', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <AlertCircle size={16} />
                     <span>{formError}</span>
                   </div>
@@ -272,7 +287,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="e.g. devops-john"
+                      placeholder="e.g. officer-turner"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required
@@ -284,7 +299,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="e.g. John Doe"
+                      placeholder="e.g. John Turner"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       required
@@ -294,11 +309,11 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label className="form-label">Email Address</label>
+                    <label className="form-label">Official Email</label>
                     <input 
                       type="email" 
                       className="form-input" 
-                      placeholder="john@company.com"
+                      placeholder="turner@fleet.naval"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -306,7 +321,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Password</label>
+                    <label className="form-label">Security Password</label>
                     <input 
                       type="password" 
                       className="form-input" 
@@ -321,19 +336,19 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label className="form-label">System Role</label>
+                    <label className="form-label">Commission Rank / Role</label>
                     <select 
                       className="form-select"
                       value={role}
                       onChange={(e) => setRole(e.target.value)}
                     >
-                      <option value="OPERATOR">VM Operator (Start, Stop, Console)</option>
-                      <option value="ADMIN">Administrator (Full Control)</option>
+                      <option value="OPERATOR">VM Operator (Power, Console Control)</option>
+                      <option value="ADMIN">Admiralty Administrator (Full Command)</option>
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Tenant Organization</label>
+                    <label className="form-label">Division / Tenant</label>
                     <select 
                       className="form-select"
                       value={tenantId}
@@ -348,10 +363,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 {/* If role is OPERATOR, allow immediate VM assignment */}
                 {role === 'OPERATOR' && (
-                  <div style={{ marginTop: '10px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ marginTop: '10px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fff' }}>
-                        Assign Initial Virtual Machines ({initialVMs.length} selected):
+                      <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                        Assign Initial Fleet Vessels ({initialVMs.length} selected):
                       </span>
                     </div>
 
@@ -364,9 +379,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                             alignItems: 'center', 
                             justifyContent: 'space-between', 
                             padding: '8px 12px', 
-                            borderRadius: '6px', 
-                            background: initialVMs.includes(vm.id) ? 'rgba(0, 242, 254, 0.08)' : 'rgba(255,255,255,0.03)',
-                            border: `1px solid ${initialVMs.includes(vm.id) ? 'rgba(0, 242, 254, 0.3)' : 'transparent'}`,
+                            borderRadius: '8px', 
+                            background: initialVMs.includes(vm.id) ? '#eff6ff' : '#ffffff',
+                            border: `1px solid ${initialVMs.includes(vm.id) ? 'rgba(56, 189, 248, 0.45)' : 'transparent'}`,
                             cursor: 'pointer' 
                           }}
                         >
@@ -375,10 +390,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                               type="checkbox" 
                               checked={initialVMs.includes(vm.id)} 
                               onChange={() => toggleInitialVM(vm.id)} 
-                              style={{ accentColor: 'var(--accent-cyan)' }}
+                              style={{ accentColor: 'var(--ocean-blue)' }}
                             />
                             <div>
-                              <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.85rem' }}>{vm.name}</span>
+                              <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>{vm.name}</span>
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '8px' }}>({vm.ip_address})</span>
                             </div>
                           </div>
@@ -397,7 +412,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating...' : 'Create Account'}
+                  {isSubmitting ? 'Commissioning...' : 'Authorize Account'}
                 </button>
               </div>
             </form>
@@ -411,9 +426,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '620px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Assign Virtual Machines</h2>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                  Assigning access for Operator: <strong style={{ color: '#fff' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Assign Fleet Vessels</h2>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Assigning access for Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setAssigningUser(null)} style={{ padding: '6px' }}>
@@ -424,15 +439,15 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
             <div className="modal-body">
               {/* Quick Select Buttons */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  Selected: <strong style={{ color: 'var(--accent-cyan)' }}>{selectedVMs.length}</strong> of {vms.length} VMs
+                <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                  Selected: <strong style={{ color: '#1e3a8a' }}>{selectedVMs.length}</strong> of {vms.length} Vessels
                 </span>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button 
                     type="button" 
                     className="btn btn-secondary btn-sm" 
-                    style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                    style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                     onClick={() => setSelectedVMs(vms.map(v => v.id))}
                   >
                     Select All
@@ -440,7 +455,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   <button 
                     type="button" 
                     className="btn btn-secondary btn-sm" 
-                    style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                    style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                     onClick={() => setSelectedVMs([])}
                   >
                     Clear All
@@ -462,9 +477,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: isChecked ? 'rgba(0, 242, 254, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                        border: `1px solid ${isChecked ? 'rgba(0, 242, 254, 0.35)' : 'var(--border-subtle)'}`,
+                        borderRadius: '9px',
+                        background: isChecked ? '#eff6ff' : '#ffffff',
+                        border: `1px solid ${isChecked ? 'rgba(56, 189, 248, 0.45)' : 'var(--border-subtle)'}`,
                         cursor: 'pointer',
                         transition: 'all 0.15s'
                       }}
@@ -474,10 +489,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => toggleVMSelection(vm.id)}
-                          style={{ width: '16px', height: '16px', accentColor: 'var(--accent-cyan)' }}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--ocean-blue)' }}
                         />
                         <div>
-                          <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.9rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.92rem' }}>
                             {vm.name}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '2px' }}>
@@ -503,7 +518,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" onClick={handleSaveAssignments}>
-                Save Assignments
+                Save Vessel Assignments
               </button>
             </div>
           </div>
