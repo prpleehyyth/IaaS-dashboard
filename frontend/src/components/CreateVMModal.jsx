@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Server, Cpu, Database, HardDrive, AlertCircle, Disc, RefreshCw } from 'lucide-react';
-import api from '../api/client';
+import { api } from '../api/client';
 
 const OS_OPTIONS = [
   'Ubuntu 22.04 LTS',

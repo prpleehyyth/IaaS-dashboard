@@ -311,7 +311,58 @@ type MeteringTenantSummary struct {
 	TotalVCPUHours  float64   `json:"total_vcpu_hours"`
 	TotalRAMGBHours float64   `json:"total_ram_gb_hours"`
 	TotalDiskGBDays float64   `json:"total_disk_gb_days"`
-	EstimatedCost   float64   `json:"estimated_cost"` // Pre-wired estimation ready for billing plan
+	EstimatedCost   float64   `json:"estimated_cost"`
 	PeriodStart     time.Time `json:"period_start"`
 	PeriodEnd       time.Time `json:"period_end"`
+}
+
+type BillingRates struct {
+	ID                string    `json:"id" db:"id"`
+	Currency          string    `json:"currency" db:"currency"`
+	CPURateHourly     float64   `json:"cpu_rate_hourly" db:"cpu_rate_hourly"`
+	RAMRateHourly     float64   `json:"ram_rate_hourly" db:"ram_rate_hourly"`
+	StorageRateHourly float64   `json:"storage_rate_hourly" db:"storage_rate_hourly"`
+	NetworkRateHourly float64   `json:"network_rate_hourly" db:"network_rate_hourly"`
+	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type UpdateBillingRatesRequest struct {
+	Currency          string  `json:"currency"`
+	CPURateHourly     float64 `json:"cpu_rate_hourly"`
+	RAMRateHourly     float64 `json:"ram_rate_hourly"`
+	StorageRateHourly float64 `json:"storage_rate_hourly"`
+	NetworkRateHourly float64 `json:"network_rate_hourly"`
+}
+
+type VMBillingItem struct {
+	VMID              uuid.UUID `json:"vm_id"`
+	VMName            string    `json:"vm_name"`
+	Status            string    `json:"status"`
+	NodeName          string    `json:"node_name"`
+	ClusterName       string    `json:"cluster_name"`
+	CPUCores          int       `json:"cpu_cores"`
+	RAMMB             int       `json:"ram_mb"`
+	DiskGB            int       `json:"disk_gb"`
+	IPAddress         string    `json:"ip_address"`
+	CPUCostHourly     float64   `json:"cpu_cost_hourly"`
+	RAMCostHourly     float64   `json:"ram_cost_hourly"`
+	StorageCostHourly float64   `json:"storage_cost_hourly"`
+	NetworkCostHourly float64   `json:"network_cost_hourly"`
+	TotalHourly       float64   `json:"total_hourly"`
+	TotalMonthly      float64   `json:"total_monthly"`
+	AssignedUserName  string    `json:"assigned_user_name,omitempty"`
+}
+
+type UserBillingReport struct {
+	UserID        uuid.UUID       `json:"user_id"`
+	Username      string          `json:"username"`
+	Role          string          `json:"role"`
+	TotalVMs      int             `json:"total_vms"`
+	TotalCPUCores int             `json:"total_cpu_cores"`
+	TotalRAMGB    float64         `json:"total_ram_gb"`
+	TotalDiskGB   int             `json:"total_disk_gb"`
+	TotalHourly   float64         `json:"total_hourly"`
+	TotalMonthly  float64         `json:"total_monthly"`
+	VMs           []VMBillingItem `json:"vms"`
+	Rates         BillingRates    `json:"rates"`
 }

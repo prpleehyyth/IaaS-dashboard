@@ -219,6 +219,21 @@ class ApiClient {
     return this.request('/metering/summary');
   }
 
+  async getBillingReport() {
+    return this.request('/billing/report');
+  }
+
+  async getBillingRates() {
+    return this.request('/billing/rates');
+  }
+
+  async updateBillingRates(payload) {
+    return this.request('/billing/rates', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // User Management Endpoints (Admin Only)
   async getUsers() {
     return this.request('/users');
@@ -246,3 +261,4 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+export default api;

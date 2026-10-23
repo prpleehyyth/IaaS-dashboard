@@ -149,6 +149,21 @@ VALUES
     ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'admin', 'admin@cloud.local', '$2a$10$X7nC4KxO9l1s7E4Fz.o0teX/o.4p6KxT4QzE9F8E4p6KxT4QzE9F8', 'Cloud Administrator', 'ADMIN', 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
+-- 9. Billing Rates Configuration
+CREATE TABLE IF NOT EXISTS billing_rates (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+    currency VARCHAR(10) DEFAULT 'IDR',
+    cpu_rate_hourly NUMERIC(12, 2) DEFAULT 250.00,
+    ram_rate_hourly NUMERIC(12, 2) DEFAULT 100.00,
+    storage_rate_hourly NUMERIC(12, 2) DEFAULT 1.50,
+    network_rate_hourly NUMERIC(12, 2) DEFAULT 50.00,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO billing_rates (id, currency, cpu_rate_hourly, ram_rate_hourly, storage_rate_hourly, network_rate_hourly)
+VALUES ('default', 'IDR', 250.00, 100.00, 1.50, 50.00)
+ON CONFLICT (id) DO NOTHING;
+
 -- Clusters, Nodes, Virtual Machines, Activity Logs, and User Assignments are 100% VIRGIN (0 records).
 
 

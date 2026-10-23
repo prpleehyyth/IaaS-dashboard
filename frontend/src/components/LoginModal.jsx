@@ -42,34 +42,34 @@ export default function LoginModal({ onLoginSuccess }) {
   return (
     <div className="modal-overlay" style={{ background: 'linear-gradient(160deg, #f8fafc 0%, #e2e8f0 100%)' }}>
       <div className="modal-content" style={{ maxWidth: '450px', padding: '34px' }}>
-        {/* Brand Icon with Maritime Compass */}
+        {/* Brand Icon with PT PAL Indonesia */}
         <div style={{ textAlign: 'center', marginBottom: '26px' }}>
           <div style={{ 
-            width: '56px', 
-            height: '56px', 
-            borderRadius: '16px', 
-            background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+            height: '62px',
+            padding: '8px 20px',
+            borderRadius: '14px', 
+            background: '#ffffff',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: 'var(--shadow-glow-ocean)',
-            border: '1px solid #bfdbfe',
+            boxShadow: '0 4px 14px rgba(4, 60, 140, 0.10)',
+            border: '1px solid #cbd5e1',
             marginBottom: '16px'
           }}>
-            <Compass size={32} color="#ffffff" strokeWidth={2.5} />
+            <img src="/pt-pal-logo.png" alt="PT PAL Indonesia" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
           </div>
           <h2 style={{ 
             fontSize: '1.65rem', 
             fontWeight: 800, 
-            background: 'linear-gradient(90deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)',
+            background: 'linear-gradient(90deg, #043c8c 0%, #1e3a8a 50%, #2563eb 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             letterSpacing: '-0.02em'
           }}>
-            CloudForge IaaS
+            Private Cloud Panel
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '5px' }}>
-            Maritime Hybrid Cloud • VMware vSphere & Proxmox VE
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '5px', fontWeight: 600 }}>
+            PT PAL Indonesia • VMware vSphere & Proxmox VE
           </p>
         </div>
 

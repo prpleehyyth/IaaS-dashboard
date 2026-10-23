@@ -38,3 +38,42 @@ func (h *MeteringHandler) GetMeteringSummary(c *gin.Context) {
 		c.JSON(http.StatusOK, []models.MeteringTenantSummary{*summary})
 	}
 }
+
+func (h *MeteringHandler) GetBillingReport(c *gin.Context) {
+	role := middleware.GetUserRole(c)
+	userID := middleware.GetUserID(c)
+
+	report, err := h.meteringService.GetUserBillingReport(c.Request.Context(), userID, role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate billing report: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, report)
+}
+
+func (h *MeteringHandler) GetBillingRates(c *gin.Context) {
+	rates, err := h.meteringService.GetBillingRates(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get billing rates: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, rates)
+}
+
+func (h *MeteringHandler) UpdateBillingRates(c *gin.Context) {
+	var req models.UpdateBillingRatesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid billing rates payload: " + err.Error()})
+		return
+	}
+
+	rates, err := h.meteringService.UpdateBillingRates(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update billing rates: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, rates)
+}

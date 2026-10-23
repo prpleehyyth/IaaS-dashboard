@@ -1,10 +1,9 @@
 import React from 'react';
 import { 
-  Compass, 
+  Sliders, 
   LayoutDashboard, 
   Server, 
   HardDrive, 
-  Building2, 
   Receipt, 
   Users, 
   LogOut, 
@@ -16,29 +15,29 @@ import {
 export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, onLogout }) {
   const isAdmin = user?.role === 'ADMIN';
 
-  // Short labels keep the bar on a single line; full description lives in the tooltip
+  // Navigation tabs for PT PAL Private Cloud Panel
   const tabs = [
     { id: 'overview', label: 'Overview', title: 'Overview', icon: LayoutDashboard },
     { id: 'clusters', label: 'Clusters', title: 'Clusters & Compute Nodes', icon: Server },
     { id: 'vms', label: 'VM Fleet', title: 'Virtual Machines', icon: HardDrive },
     ...(isAdmin ? [
-      { id: 'tenants', label: 'Tenants', title: 'Tenants & Quotas', icon: Building2 },
       { id: 'users', label: 'Users', title: 'Users & VM Access', icon: Users },
+      { id: 'billing-rates', label: 'Atur Tarif', title: 'Atur Tarif CPU, Storage & Network', icon: Sliders },
     ] : []),
-    { id: 'billing', label: 'Billing', title: 'Billing Telemetry', icon: Receipt },
+    { id: 'billing', label: 'Billing', title: 'Laporan Billing & Biaya VM', icon: Receipt },
   ];
 
   return (
     <header className="navbar">
       <div className="navbar-inner">
-        {/* Brand with Maritime Compass Crest */}
+        {/* Brand with PT PAL Indonesia Logo */}
         <div className="nav-brand">
-          <div className="brand-icon">
-            <Compass size={22} color="#ffffff" strokeWidth={2.4} />
+          <div className="brand-logo-badge">
+            <img src="/pt-pal-logo.png" alt="PT PAL Indonesia" className="brand-logo-img" />
           </div>
           <div className="brand-text">
-            <div className="brand-title">CloudForge IaaS</div>
-            <div className="brand-subtitle">Maritime Hybrid Cloud</div>
+            <div className="brand-title">Private Cloud Panel</div>
+            <div className="brand-subtitle">PT PAL Indonesia</div>
           </div>
         </div>
 

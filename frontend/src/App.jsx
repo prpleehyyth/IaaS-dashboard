@@ -6,7 +6,7 @@ import VMManagement from './components/VMManagement';
 import CreateVMModal from './components/CreateVMModal';
 import EditVMModal from './components/EditVMModal';
 import VMConsoleModal from './components/VMConsoleModal';
-import TenantManagement from './components/TenantManagement';
+import BillingRatesConfig from './components/BillingRatesConfig';
 import UserManagement from './components/UserManagement';
 import BillingPreview from './components/BillingPreview';
 import LoginModal from './components/LoginModal';
@@ -270,13 +270,6 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'tenants' && user?.role === 'ADMIN' && (
-          <TenantManagement 
-            tenants={tenants}
-            onRefresh={loadData}
-          />
-        )}
-
         {activeTab === 'users' && user?.role === 'ADMIN' && (
           <UserManagement 
             users={users}
@@ -287,8 +280,18 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'billing-rates' && user?.role === 'ADMIN' && (
+          <BillingRatesConfig 
+            onRatesUpdated={() => showToast('Tarif billing berhasil disimpan dan disinkronkan')}
+            onNavigateBilling={() => setActiveTab('billing')}
+          />
+        )}
+
         {activeTab === 'billing' && (
-          <BillingPreview />
+          <BillingPreview 
+            user={user}
+            onNavigateRates={() => setActiveTab('billing-rates')}
+          />
         )}
       </main>
 

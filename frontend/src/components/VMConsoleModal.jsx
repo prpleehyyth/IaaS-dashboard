@@ -16,7 +16,7 @@ export default function VMConsoleModal({ vm, onClose }) {
 
     async function initConsole() {
       try {
-        setTerminalOutput(`\x1b[1;34m[CloudForge Maritime IaaS]\x1b[0m Initializing secure VNC/Serial web tunnel to vessel '${vm.name}'...\r\n`);
+        setTerminalOutput(`\x1b[1;34m[PT PAL Private Cloud]\x1b[0m Initializing secure VNC/Serial web tunnel to node '${vm.name}'...\r\n`);
         
         // Request console session from backend
         const sess = await api.createConsoleSession(vm.id);

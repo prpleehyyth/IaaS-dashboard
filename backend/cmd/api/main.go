@@ -104,11 +104,15 @@ func main() {
 
 		// Telemetry & Metering (Pre-wired for billing)
 		api.GET("/metering/summary", meteringHandler.GetMeteringSummary)
+		api.GET("/billing/report", meteringHandler.GetBillingReport)
+		api.GET("/billing/rates", meteringHandler.GetBillingRates)
 
 		// Admin-Only Routes
 		adminOnly := api.Group("")
 		adminOnly.Use(middleware.RequireRole(models.RoleAdmin))
 		{
+			// Billing Rate Management (Admin Only)
+			adminOnly.PUT("/billing/rates", meteringHandler.UpdateBillingRates)
 			// Cluster & Node Fleet Management (Admin Only)
 			adminOnly.POST("/clusters", clusterHandler.CreateCluster)
 			adminOnly.POST("/clusters/test-connection", clusterHandler.TestConnection)
