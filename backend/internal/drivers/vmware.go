@@ -296,3 +296,14 @@ func (v *VMwareDriver) GetConsoleTicket(ctx context.Context, cluster *models.Clu
 	info.WebSocketURL = fmt.Sprintf("/api/v1/vms/%d/console/ws?ticket=%s", vmid, info.Ticket)
 	return info, nil
 }
+
+func (v *VMwareDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {
+	return []models.ISOImageInfo{
+		{
+			VolID:    "[datastore1] ISO/ubuntu-22.04.4-live-server-amd64.iso",
+			FileName: "ubuntu-22.04.4-live-server-amd64.iso",
+			SizeGB:   1.97,
+			Storage:  "datastore1",
+		},
+	}, nil
+}

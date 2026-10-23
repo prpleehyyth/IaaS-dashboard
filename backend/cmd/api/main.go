@@ -94,6 +94,7 @@ func main() {
 		api.GET("/dashboard/summary", clusterHandler.GetDashboardSummary)
 		api.GET("/clusters", clusterHandler.GetAllClusters)
 		api.GET("/clusters/:id", clusterHandler.GetCluster)
+		api.GET("/clusters/:id/isos", clusterHandler.GetClusterISOs)
 
 		// Virtual Machines (Admin & Operator)
 		api.GET("/vms", vmHandler.ListVMs)

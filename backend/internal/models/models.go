@@ -209,6 +209,14 @@ type CreateVMRequest struct {
 	RAMMB          int            `json:"ram_mb" binding:"required,min=512"`
 	DiskGB         int            `json:"disk_gb" binding:"required,min=10"`
 	OSType         string         `json:"os_type" binding:"required"`
+	ISOImage       string         `json:"iso_image"`
+}
+
+type ISOImageInfo struct {
+	VolID    string  `json:"volid"`
+	FileName string  `json:"filename"`
+	SizeGB   float64 `json:"size_gb"`
+	Storage  string  `json:"storage"`
 }
 
 type UpdateVMRequest struct {

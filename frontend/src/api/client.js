@@ -91,6 +91,11 @@ class ApiClient {
     return this.request('/clusters');
   }
 
+  async getClusterISOs(clusterId, nodeId) {
+    const qs = nodeId ? `?node=${encodeURIComponent(nodeId)}` : '';
+    return this.request(`/clusters/${clusterId}/isos${qs}`);
+  }
+
   async createCluster(payload) {
     return this.request('/clusters', {
       method: 'POST',

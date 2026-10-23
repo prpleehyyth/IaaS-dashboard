@@ -135,3 +135,16 @@ func (h *ClusterHandler) ResetVirgin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Database reset to virgin state successfully. All clusters, nodes, VMs and logs cleared."})
 }
 
+func (h *ClusterHandler) GetClusterISOs(c *gin.Context) {
+	clusterID := c.Param("id")
+	nodeID := c.Query("node")
+
+	isos, err := h.clusterService.GetClusterISOs(c.Request.Context(), clusterID, nodeID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch ISO images: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, isos)
+}
+

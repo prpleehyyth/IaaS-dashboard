@@ -34,5 +34,6 @@ type HypervisorDriver interface {
 	TestConnection(ctx context.Context, cluster *models.Cluster) (*models.TestClusterConnectionResponse, error)
 	DiscoverNodes(ctx context.Context, cluster *models.Cluster) ([]models.Node, error)
 	DiscoverVMs(ctx context.Context, cluster *models.Cluster) ([]models.VirtualMachine, error)
+	ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error)
 }
 

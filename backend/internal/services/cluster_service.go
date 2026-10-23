@@ -426,3 +426,26 @@ func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.Dashb
 		RecentLogs:      recentLogs,
 	}, nil
 }
+
+func (s *ClusterService) GetClusterISOs(ctx context.Context, clusterID string, nodeID string) ([]models.ISOImageInfo, error) {
+	cluster, err := s.GetClusterByID(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("cluster not found: %w", err)
+	}
+
+	var targetNode *models.Node
+	if nodeID != "" {
+		for i := range cluster.Nodes {
+			if cluster.Nodes[i].ID == nodeID || cluster.Nodes[i].Name == nodeID {
+				targetNode = &cluster.Nodes[i]
+				break
+			}
+		}
+	}
+	if targetNode == nil && len(cluster.Nodes) > 0 {
+		targetNode = &cluster.Nodes[0]
+	}
+
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	return driver.ListISOs(ctx, cluster, targetNode)
+}

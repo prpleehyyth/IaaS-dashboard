@@ -414,7 +414,6 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 		diskGB = 32
 	}
 
-	// 4. Form urlencoded payload for Proxmox POST /nodes/{node}/qemu
 	formData := url.Values{}
 	formData.Set("vmid", strconv.Itoa(vmid))
 	formData.Set("name", cleanName)
@@ -425,6 +424,15 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	formData.Set("scsihw", "virtio-scsi-pci")
 	formData.Set("scsi0", fmt.Sprintf("%s:%d", storage, diskGB))
 	formData.Set("net0", "virtio,bridge=vmbr0")
+
+	// CD-ROM / ISO Attachment and Boot Priority
+	if req.ISOImage != "" && req.ISOImage != "none" {
+		formData.Set("ide2", fmt.Sprintf("%s,media=cdrom", req.ISOImage))
+		formData.Set("boot", "order=ide2;scsi0;net0")
+	} else {
+		formData.Set("ide2", "none,media=cdrom")
+		formData.Set("boot", "order=scsi0;net0")
+	}
 
 	createURL := fmt.Sprintf("/nodes/%s/qemu", nodeName)
 	resp, err := p.doRequestWithContentType(ctx, http.MethodPost, createURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
@@ -626,4 +634,95 @@ func (p *ProxmoxDriver) GetConsoleTicket(ctx context.Context, cluster *models.Cl
 	info.Protocol = "vnc"
 	info.WebSocketURL = fmt.Sprintf("/api/v1/vms/%d/console/ws?ticket=%s", vmid, info.Ticket)
 	return info, nil
+}
+
+func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+
+	// 1. Find all active storages that support ISOs on this node
+	storagesResp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
+	var isoStorages []string
+	if err == nil && storagesResp.StatusCode == http.StatusOK {
+		defer storagesResp.Body.Close()
+		var sData struct {
+			Data []struct {
+				Storage string `json:"storage"`
+				Content string `json:"content"`
+				Active  int    `json:"active"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(storagesResp.Body).Decode(&sData); err == nil {
+			for _, st := range sData.Data {
+				if strings.Contains(st.Content, "iso") {
+					isoStorages = append(isoStorages, st.Storage)
+				}
+			}
+		}
+	}
+
+	// Fallback to "local" if no storages explicitly matched or returned
+	if len(isoStorages) == 0 {
+		isoStorages = append(isoStorages, "local")
+	}
+
+	var results []models.ISOImageInfo
+	seenVolIDs := make(map[string]bool)
+
+	// 2. Query content for each ISO storage
+	for _, storageName := range isoStorages {
+		reqURL := fmt.Sprintf("/nodes/%s/storage/%s/content?content=iso", nodeName, storageName)
+		contentResp, err := p.doRequest(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			continue
+		}
+		if contentResp.StatusCode != http.StatusOK {
+			contentResp.Body.Close()
+			continue
+		}
+
+		var cData struct {
+			Data []struct {
+				VolID   string `json:"volid"`
+				Size    int64  `json:"size"`
+				Format  string `json:"format"`
+				Content string `json:"content"`
+			} `json:"data"`
+		}
+		_ = json.NewDecoder(contentResp.Body).Decode(&cData)
+		contentResp.Body.Close()
+
+		for _, item := range cData.Data {
+			if item.VolID == "" || seenVolIDs[item.VolID] {
+				continue
+			}
+			seenVolIDs[item.VolID] = true
+
+			// Extract filename from volid, e.g. "local:iso/ubuntu-22.04.iso" -> "ubuntu-22.04.iso"
+			filename := item.VolID
+			if idx := strings.LastIndex(filename, "/"); idx != -1 {
+				filename = filename[idx+1:]
+			} else if idx := strings.LastIndex(filename, ":"); idx != -1 {
+				filename = filename[idx+1:]
+			}
+
+			sizeGB := float64(item.Size) / (1024 * 1024 * 1024)
+			sizeGB = math.Round(sizeGB*100) / 100
+
+			results = append(results, models.ISOImageInfo{
+				VolID:    item.VolID,
+				FileName: filename,
+				SizeGB:   sizeGB,
+				Storage:  storageName,
+			})
+		}
+	}
+
+	if results == nil {
+		results = []models.ISOImageInfo{}
+	}
+
+	return results, nil
 }

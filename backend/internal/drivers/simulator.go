@@ -122,3 +122,26 @@ func (s *SimulatorDriver) DiscoverVMs(ctx context.Context, cluster *models.Clust
 	return []models.VirtualMachine{}, nil
 }
 
+func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {
+	return []models.ISOImageInfo{
+		{
+			VolID:    "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
+			FileName: "ubuntu-22.04.4-live-server-amd64.iso",
+			SizeGB:   1.97,
+			Storage:  "local",
+		},
+		{
+			VolID:    "local:iso/debian-12.5.0-amd64-netinst.iso",
+			FileName: "debian-12.5.0-amd64-netinst.iso",
+			SizeGB:   0.63,
+			Storage:  "local",
+		},
+		{
+			VolID:    "local:iso/alpine-standard-3.19.1-x86_64.iso",
+			FileName: "alpine-standard-3.19.1-x86_64.iso",
+			SizeGB:   0.21,
+			Storage:  "local",
+		},
+	}, nil
+}
+

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, Server, Cpu, Database, HardDrive, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Server, Cpu, Database, HardDrive, AlertCircle, Disc, RefreshCw } from 'lucide-react';
+import api from '../api/client';
 
 const OS_OPTIONS = [
   'Ubuntu 22.04 LTS',
@@ -15,6 +16,9 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   const [selectedClusterId, setSelectedClusterId] = useState(clusters[0]?.id || '');
   const [selectedNodeId, setSelectedNodeId] = useState(clusters[0]?.nodes?.[0]?.id || '');
   const [osType, setOsType] = useState('Ubuntu 22.04 LTS');
+  const [isoList, setIsoList] = useState([]);
+  const [selectedIso, setSelectedIso] = useState('');
+  const [isLoadingIsos, setIsLoadingIsos] = useState(false);
   const [cpuCores, setCpuCores] = useState(4);
   const [ramGB, setRamGB] = useState(8);
   const [diskGB, setDiskGB] = useState(50);
@@ -23,6 +27,36 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
   const selectedCluster = clusters.find(c => c.id === selectedClusterId);
   const availableNodes = selectedCluster?.nodes || [];
+
+  const fetchISOs = async (clusterId, nodeId) => {
+    if (!clusterId) {
+      setIsoList([]);
+      setSelectedIso('');
+      return;
+    }
+    setIsLoadingIsos(true);
+    try {
+      const isos = await api.getClusterISOs(clusterId, nodeId);
+      setIsoList(isos || []);
+      if (isos && isos.length > 0) {
+        setSelectedIso(prev => {
+          if (prev && isos.some(i => i.volid === prev)) return prev;
+          return isos[0].volid;
+        });
+      } else {
+        setSelectedIso('');
+      }
+    } catch (err) {
+      console.warn('Failed to load ISO images:', err);
+      setIsoList([]);
+    } finally {
+      setIsLoadingIsos(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchISOs(selectedClusterId, selectedNodeId);
+  }, [selectedClusterId, selectedNodeId]);
 
   const handleClusterChange = (newClusterId) => {
     setSelectedClusterId(newClusterId);
@@ -58,6 +92,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
         ram_mb: parseInt(ramGB, 10) * 1024,
         disk_gb: parseInt(diskGB, 10),
         os_type: osType,
+        iso_image: selectedIso,
       });
       onClose();
     } catch (err) {
@@ -163,7 +198,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
             {/* OS Template */}
             <div className="form-group">
-              <label className="form-label">Operating System Image</label>
+              <label className="form-label">Operating System Profile</label>
               <select 
                 className="form-select" 
                 value={osType} 
@@ -173,6 +208,64 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   <option key={os} value={os}>{os}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Boot / Installer ISO (CD-ROM) */}
+            <div className="form-group" style={{ marginTop: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Disc size={15} style={{ color: 'var(--ocean-blue)' }} />
+                  <span>Boot / Installer ISO (CD-ROM)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => fetchISOs(selectedClusterId, selectedNodeId)}
+                  disabled={isLoadingIsos}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--ocean-blue)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 4px'
+                  }}
+                  title="Scan storage for ISO files"
+                >
+                  <RefreshCw size={12} className={isLoadingIsos ? 'spin' : ''} />
+                  <span>{isLoadingIsos ? 'Scanning...' : 'Scan Storage'}</span>
+                </button>
+              </div>
+
+              <select
+                className="form-select"
+                value={selectedIso}
+                onChange={(e) => setSelectedIso(e.target.value)}
+                disabled={isLoadingIsos}
+              >
+                <option value="">None (Blank Virtual Disk / Network Boot)</option>
+                {isoList.map((iso) => (
+                  <option key={iso.volid} value={iso.volid}>
+                    {iso.filename} ({iso.storage} • {iso.size_gb} GB)
+                  </option>
+                ))}
+              </select>
+
+              {selectedIso ? (
+                <div style={{ fontSize: '0.75rem', color: '#059669', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span>✓ ISO will be mounted to virtual CD-ROM (ide2) with first boot priority.</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '5px' }}>
+                  {isoList.length === 0 && !isLoadingIsos ? (
+                    <span>No ISOs discovered in storage. You can upload an ISO to Proxmox 'local' storage or boot an existing disk.</span>
+                  ) : (
+                    <span>VM will provision with an unformatted disk without an installer attached.</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Hardware Specs Range Sliders */}
