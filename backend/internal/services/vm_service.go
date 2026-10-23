@@ -176,7 +176,7 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
 		NodeID:         node.ID,
 		HypervisorType: cluster.Type,
 		Name:           req.Name,
-		Status:         models.VMStatusRunning,
+		Status:         models.VMStatusStopped,
 		CPUCores:       req.CPUCores,
 		RAMMB:          req.RAMMB,
 		DiskGB:         req.DiskGB,

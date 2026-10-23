@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func NewProxmoxDriver(endpoint, tokenID, tokenSecret string, insecureSSL bool) *
 	}
 }
 
-func (p *ProxmoxDriver) doRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+func (p *ProxmoxDriver) doRequestWithContentType(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
 	url := fmt.Sprintf("%s/api2/json%s", p.endpoint, path)
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -54,11 +55,19 @@ func (p *ProxmoxDriver) doRequest(ctx context.Context, method, path string, body
 	if p.tokenID != "" && p.tokenSecret != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", p.tokenID, p.tokenSecret))
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	return p.client.Do(req)
+}
+
+func (p *ProxmoxDriver) doRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	contentType := ""
+	if body != nil {
+		contentType = "application/json"
+	}
+	return p.doRequestWithContentType(ctx, method, path, body, contentType)
 }
 
 func (p *ProxmoxDriver) TestConnection(ctx context.Context, cluster *models.Cluster) (*models.TestClusterConnectionResponse, error) {
@@ -300,14 +309,189 @@ func (p *ProxmoxDriver) RefreshNodeStats(ctx context.Context, cluster *models.Cl
 	return node, nil
 }
 
+func (p *ProxmoxDriver) getNextVMID(ctx context.Context) (int, error) {
+	resp, err := p.doRequest(ctx, http.MethodGet, "/cluster/nextid", nil)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var nextIDResp struct {
+		Data interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&nextIDResp); err == nil && nextIDResp.Data != nil {
+		switch v := nextIDResp.Data.(type) {
+		case string:
+			id, err := strconv.Atoi(v)
+			if err == nil && id >= 100 {
+				return id, nil
+			}
+		case float64:
+			if int(v) >= 100 {
+				return int(v), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("failed to retrieve next VMID from Proxmox")
+}
+
+func (p *ProxmoxDriver) getAvailableStorage(ctx context.Context, nodeName string) string {
+	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
+	if err == nil {
+		defer resp.Body.Close()
+		var storagesResp struct {
+			Data []struct {
+				Storage string `json:"storage"`
+				Content string `json:"content"`
+				Active  int    `json:"active"`
+				Type    string `json:"type"`
+			} `json:"data"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&storagesResp) == nil && len(storagesResp.Data) > 0 {
+			// 1. Storage that allows images
+			for _, s := range storagesResp.Data {
+				if s.Active == 1 && strings.Contains(s.Content, "images") {
+					return s.Storage
+				}
+			}
+			// 2. Storage of type lvmthin, zfs, or rbd
+			for _, s := range storagesResp.Data {
+				if s.Active == 1 && (s.Type == "lvmthin" || s.Type == "zfs" || s.Type == "zfspool" || s.Type == "rbd") {
+					return s.Storage
+				}
+			}
+			// 3. Any active storage
+			for _, s := range storagesResp.Data {
+				if s.Active == 1 && s.Storage != "" {
+					return s.Storage
+				}
+			}
+		}
+	}
+	return "local-lvm"
+}
+
 func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, node *models.Node, req models.CreateVMRequest) (int, string, string, error) {
-	sim := NewSimulatorDriver()
-	return sim.CreateVM(ctx, cluster, node, req)
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+	if nodeName == "" {
+		nodeName = "pve"
+	}
+
+	// 1. Get next available VMID directly from Proxmox
+	vmid, err := p.getNextVMID(ctx)
+	if err != nil || vmid < 100 {
+		vmid = 200 + int(time.Now().UnixNano()%700)
+	}
+
+	// 2. Auto-detect real storage on the node
+	storage := p.getAvailableStorage(ctx, nodeName)
+
+	// 3. Sanitize VM Name for Proxmox validation
+	cleanName := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, strings.TrimSpace(req.Name))
+	cleanName = strings.Trim(cleanName, "-_")
+	if cleanName == "" {
+		cleanName = fmt.Sprintf("vm-%d", vmid)
+	}
+
+	cores := req.CPUCores
+	if cores <= 0 {
+		cores = 2
+	}
+	memory := req.RAMMB
+	if memory <= 0 {
+		memory = 2048
+	}
+	diskGB := req.DiskGB
+	if diskGB <= 0 {
+		diskGB = 32
+	}
+
+	// 4. Form urlencoded payload for Proxmox POST /nodes/{node}/qemu
+	formData := url.Values{}
+	formData.Set("vmid", strconv.Itoa(vmid))
+	formData.Set("name", cleanName)
+	formData.Set("cores", strconv.Itoa(cores))
+	formData.Set("memory", strconv.Itoa(memory))
+	formData.Set("sockets", "1")
+	formData.Set("ostype", "l26")
+	formData.Set("scsihw", "virtio-scsi-pci")
+	formData.Set("scsi0", fmt.Sprintf("%s:%d", storage, diskGB))
+	formData.Set("net0", "virtio,bridge=vmbr0")
+
+	createURL := fmt.Sprintf("/nodes/%s/qemu", nodeName)
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPost, createURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return 0, "", "", fmt.Errorf("failed to send create request to Proxmox at %s: %w", p.endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, "", "", fmt.Errorf("Proxmox rejected VM creation (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	log.Printf("[Proxmox] Successfully created VM %d ('%s') on node %s: %s", vmid, cleanName, nodeName, string(bodyBytes))
+
+	ip := fmt.Sprintf("192.168.1.%d", 100+(vmid%150))
+	mac := fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+
+	return vmid, ip, mac, nil
 }
 
 func (p *ProxmoxDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.UpdateVMRequest) error {
-	sim := NewSimulatorDriver()
-	return sim.UpdateVMSpecs(ctx, cluster, node, vmid, req)
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+	if nodeName == "" {
+		nodeName = "pve"
+	}
+
+	formData := url.Values{}
+	if req.CPUCores > 0 {
+		formData.Set("cores", strconv.Itoa(req.CPUCores))
+	}
+	if req.RAMMB > 0 {
+		formData.Set("memory", strconv.Itoa(req.RAMMB))
+	}
+	if req.Name != "" {
+		cleanName := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '-'
+		}, strings.TrimSpace(req.Name))
+		cleanName = strings.Trim(cleanName, "-_")
+		if cleanName != "" {
+			formData.Set("name", cleanName)
+		}
+	}
+
+	if len(formData) == 0 {
+		return nil
+	}
+
+	updateURL := fmt.Sprintf("/nodes/%s/qemu/%d/config", nodeName, vmid)
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPut, updateURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return fmt.Errorf("failed to send update specs request to Proxmox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Proxmox update specs error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
 }
 
 func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
@@ -319,20 +503,21 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 		nodeName = "pve"
 	}
 
-	// Try QEMU delete
-	resp, err := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/qemu/%d", nodeName, vmid), nil)
+	// Try QEMU delete with purge flag
+	resp, err := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/qemu/%d?purge=1&destroy-unreferenced-disks=1", nodeName, vmid), nil)
 	if err == nil {
 		defer resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// If 200/202 or 404 (already deleted or configuration file doesn't exist), consider successful
+		if (resp.StatusCode >= 200 && resp.StatusCode < 300) || resp.StatusCode == http.StatusNotFound {
 			return nil
 		}
 	}
 
-	// Try LXC delete
-	respLXC, errLXC := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/lxc/%d", nodeName, vmid), nil)
+	// Try LXC delete with purge flag
+	respLXC, errLXC := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/lxc/%d?purge=1", nodeName, vmid), nil)
 	if errLXC == nil {
 		defer respLXC.Body.Close()
-		if respLXC.StatusCode >= 200 && respLXC.StatusCode < 300 {
+		if (respLXC.StatusCode >= 200 && respLXC.StatusCode < 300) || respLXC.StatusCode == http.StatusNotFound {
 			return nil
 		}
 	}
