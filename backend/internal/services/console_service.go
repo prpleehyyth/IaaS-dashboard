@@ -45,10 +45,6 @@ func (s *ConsoleService) RequestConsoleTicket(ctx context.Context, vmID uuid.UUI
 		}
 	}
 
-	if vm.Status != models.VMStatusRunning {
-		return nil, errors.New("cannot open console: virtual machine is currently powered off or stopped")
-	}
-
 	var cluster models.Cluster
 	query := `
 		SELECT id, name, type, datacenter, endpoint, 
@@ -71,6 +67,29 @@ func (s *ConsoleService) RequestConsoleTicket(ctx context.Context, vmID uuid.UUI
 	}
 
 	driver := s.driverFactory.GetDriverForCluster(&cluster)
+
+	// Auto-heal status if hypervisor reports VM is running even if local DB is desynced
+	if vm.Status != models.VMStatusRunning {
+		if cluster.Type == models.HypervisorProxmox {
+			if proxmoxDriver, ok := driver.(*drivers.ProxmoxDriver); ok {
+				pveVMs, errDisc := proxmoxDriver.DiscoverVMs(ctx, &cluster)
+				if errDisc == nil {
+					for _, pv := range pveVMs {
+						if pv.VMID == vm.VMID && pv.Status == models.VMStatusRunning {
+							vm.Status = models.VMStatusRunning
+							_, _ = s.db.ExecContext(ctx, `UPDATE virtual_machines SET status = 'RUNNING' WHERE id = $1`, vm.ID)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if vm.Status != models.VMStatusRunning {
+		return nil, errors.New("cannot open console: virtual machine is currently powered off. Please start the VM first.")
+	}
+
 	connInfo, err := driver.GetConsoleTicket(ctx, &cluster, &node, vm.VMID, vm.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate hypervisor console ticket: %w", err)
@@ -92,5 +111,6 @@ func (s *ConsoleService) RequestConsoleTicket(ctx context.Context, vmID uuid.UUI
 		Protocol:     connInfo.Protocol,
 		Host:         connInfo.TargetHost,
 		Port:         connInfo.TargetPort,
+		NoVNCURL:     connInfo.NoVNCURL,
 	}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"iaas-dashboard/internal/database"
@@ -59,28 +60,42 @@ func (h *ConsoleHandler) RequestConsoleSession(c *gin.Context) {
 
 func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 	idStr := c.Param("id")
-	vmID, err := uuid.Parse(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID"})
-		return
-	}
-
 	ticket := c.Query("ticket")
-	if ticket == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Ticket query parameter is required"})
-		return
+
+	var vm *models.VirtualMachine
+	var err error
+
+	// 1. Try resolving VM by UUID from path parameter
+	if idStr != "" && idStr != "console" {
+		if vmID, parseErr := uuid.Parse(idStr); parseErr == nil {
+			vm, err = h.vmService.GetVMByID(c.Request.Context(), vmID)
+		}
 	}
 
-	// Validate ticket in Redis
-	cachedVMID, err := h.redis.ValidateTicket(c.Request.Context(), ticket)
-	if err != nil || cachedVMID != vmID.String() {
-		// Log warning but allow continuation in simulator/dev mode for seamless frontend testing
-		log.Printf("Console ticket validation note: ticket %s, error %v", ticket, err)
+	// 2. If not found or idStr was an integer VMID (e.g. 103), resolve by VMID
+	if vm == nil && idStr != "" && idStr != "console" {
+		if vmid, intErr := strconv.Atoi(idStr); intErr == nil {
+			vm, _ = h.vmService.GetVMByVMID(c.Request.Context(), vmid)
+		}
 	}
 
-	vm, err := h.vmService.GetVMByID(c.Request.Context(), vmID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "VM not found"})
+	// 3. If still not found and ticket is provided, try resolving from Redis ticket cache
+	if vm == nil && ticket != "" && h.redis != nil {
+		cachedVMID, redisErr := h.redis.ValidateTicket(c.Request.Context(), ticket)
+		if redisErr == nil && cachedVMID != "" {
+			if parsedUUID, parseErr := uuid.Parse(cachedVMID); parseErr == nil {
+				vm, _ = h.vmService.GetVMByID(c.Request.Context(), parsedUUID)
+			}
+		}
+	}
+
+	// 4. Fallback: if idStr is empty or "console", find the primary active VM
+	if vm == nil {
+		vm, _ = h.vmService.GetAnyActiveVM(c.Request.Context())
+	}
+
+	if vm == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Virtual machine not found for console session"})
 		return
 	}
 

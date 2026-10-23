@@ -309,17 +309,19 @@ export default function VMManagement({
                         {/* Interactive Console */}
                         <button
                           className="btn btn-sm"
-                          title="Open Remote Web Console"
+                          title={isRunning ? "Buka Remote Web Console" : "Nyalakan VM terlebih dahulu untuk membuka console"}
                           disabled={!isRunning}
                           onClick={() => onOpenConsole(vm)}
                           style={{
-                            background: '#eff6ff',
-                            color: '#1e3a8a',
-                            border: '1px solid #bfdbfe',
-                            boxShadow: '0 1px 3px rgba(30, 58, 138, 0.08)'
+                            background: isRunning ? '#eff6ff' : 'rgba(255, 255, 255, 0.05)',
+                            color: isRunning ? '#1e3a8a' : '#64748b',
+                            border: `1px solid ${isRunning ? '#bfdbfe' : 'rgba(255, 255, 255, 0.1)'}`,
+                            boxShadow: isRunning ? '0 1px 3px rgba(30, 58, 138, 0.08)' : 'none',
+                            cursor: isRunning ? 'pointer' : 'not-allowed',
+                            opacity: isRunning ? 1 : 0.5
                           }}
                         >
-                          <Terminal size={14} color="#1e3a8a" />
+                          <Terminal size={14} color={isRunning ? "#1e3a8a" : "#64748b"} />
                           <span>Console</span>
                         </button>
 

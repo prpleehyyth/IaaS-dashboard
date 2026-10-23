@@ -188,6 +188,18 @@ class ApiClient {
   }
 
   getConsoleWsUrl(tokenOrUrl, vmId) {
+    if (typeof tokenOrUrl === 'string') {
+      if (tokenOrUrl.startsWith('ws://') || tokenOrUrl.startsWith('wss://')) {
+        return tokenOrUrl;
+      }
+      if (tokenOrUrl.startsWith('http://')) {
+        return tokenOrUrl.replace('http://', 'ws://');
+      }
+      if (tokenOrUrl.startsWith('https://')) {
+        return tokenOrUrl.replace('https://', 'wss://');
+      }
+    }
+
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     

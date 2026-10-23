@@ -286,6 +286,7 @@ type ConsoleSessionResponse struct {
 	Protocol     string `json:"protocol"` // "vnc" or "webmks"
 	Host         string `json:"host"`
 	Port         int    `json:"port"`
+	NoVNCURL     string `json:"novnc_url,omitempty"`
 }
 
 type DashboardSummaryResponse struct {

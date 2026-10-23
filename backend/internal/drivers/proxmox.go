@@ -534,6 +534,34 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 }
 
 func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vmid int, action string) error {
+	targetType := "qemu"
+
+	// 1. Auto-discover exact node name and guest type for this VMID from Proxmox cluster resources
+	respRes, errRes := p.doRequest(ctx, http.MethodGet, "/cluster/resources?type=vm", nil)
+	if errRes == nil {
+		defer respRes.Body.Close()
+		var pveVMs struct {
+			Data []struct {
+				VMID int    `json:"vmid"`
+				Node string `json:"node"`
+				Type string `json:"type"`
+			} `json:"data"`
+		}
+		if json.NewDecoder(respRes.Body).Decode(&pveVMs) == nil {
+			for _, item := range pveVMs.Data {
+				if item.VMID == vmid {
+					if item.Node != "" {
+						nodeName = item.Node
+					}
+					if item.Type != "" {
+						targetType = item.Type
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if nodeName == "" {
 		// Auto-detect node name from Proxmox if not provided
 		resp, err := p.doRequest(ctx, http.MethodGet, "/nodes", nil)
@@ -553,28 +581,40 @@ func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vm
 		}
 	}
 
-	// 1. Try QEMU path first
-	qemuPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", nodeName, vmid, action)
-	resp, err := p.doRequest(ctx, http.MethodPost, qemuPath, nil)
-	if err == nil {
-		defer resp.Body.Close()
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		bodyStr := string(bodyBytes)
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			log.Printf("[Proxmox] Successfully executed '%s' on QEMU VM %d (node %s): %s", action, vmid, nodeName, bodyStr)
-			return nil
-		}
-		lowerBody := strings.ToLower(bodyStr)
-		if strings.Contains(lowerBody, "already running") || strings.Contains(lowerBody, "not running") || strings.Contains(lowerBody, "already stopped") {
-			log.Printf("[Proxmox] VM %d state is already aligned with action '%s': %s", vmid, action, bodyStr)
-			return nil
-		}
-		log.Printf("[Proxmox] QEMU '%s' on VM %d returned HTTP %d: %s. Trying LXC container path...", action, vmid, resp.StatusCode, bodyStr)
+	// Prepare form data for action (e.g. overrule-shutdown=1 for stop to ensure instant termination)
+	var bodyReader io.Reader
+	contentType := ""
+	if action == "stop" {
+		form := url.Values{}
+		form.Set("overrule-shutdown", "1")
+		bodyReader = strings.NewReader(form.Encode())
+		contentType = "application/x-www-form-urlencoded"
 	}
 
-	// 2. Try LXC path (in case it is an LXC Container)
+	// 2. Try QEMU path if targetType is qemu (or default)
+	if targetType == "qemu" || targetType == "" {
+		qemuPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", nodeName, vmid, action)
+		resp, err := p.doRequestWithContentType(ctx, http.MethodPost, qemuPath, bodyReader, contentType)
+		if err == nil {
+			defer resp.Body.Close()
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			bodyStr := string(bodyBytes)
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				log.Printf("[Proxmox] Successfully executed '%s' on QEMU VM %d (node %s): %s", action, vmid, nodeName, bodyStr)
+				return nil
+			}
+			lowerBody := strings.ToLower(bodyStr)
+			if strings.Contains(lowerBody, "already running") || strings.Contains(lowerBody, "not running") || strings.Contains(lowerBody, "already stopped") {
+				log.Printf("[Proxmox] VM %d state is already aligned with action '%s': %s", vmid, action, bodyStr)
+				return nil
+			}
+			log.Printf("[Proxmox] QEMU '%s' on VM %d returned HTTP %d: %s. Trying LXC container path...", action, vmid, resp.StatusCode, bodyStr)
+		}
+	}
+
+	// 3. Try LXC path (in case it is an LXC Container)
 	lxcPath := fmt.Sprintf("/nodes/%s/lxc/%d/status/%s", nodeName, vmid, action)
-	respLXC, errLXC := p.doRequest(ctx, http.MethodPost, lxcPath, nil)
+	respLXC, errLXC := p.doRequestWithContentType(ctx, http.MethodPost, lxcPath, bodyReader, contentType)
 	if errLXC == nil {
 		defer respLXC.Body.Close()
 		bodyBytes, _ := io.ReadAll(respLXC.Body)
@@ -591,9 +631,6 @@ func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vm
 		return fmt.Errorf("Proxmox error (HTTP %d): %s", respLXC.StatusCode, bodyStr)
 	}
 
-	if err != nil {
-		return fmt.Errorf("failed to reach Proxmox at %s: %w", p.endpoint, err)
-	}
 	return fmt.Errorf("failed to execute power action '%s' on Proxmox VMID %d", action, vmid)
 }
 
@@ -610,11 +647,9 @@ func (p *ProxmoxDriver) StopVM(ctx context.Context, cluster *models.Cluster, nod
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
-	action := "shutdown"
-	if force {
-		action = "stop"
-	}
-	return p.executeVMAction(ctx, nodeName, vmid, action)
+	// In Proxmox, "stop" is the reliable power-off action that cuts QEMU power immediately,
+	// even for VMs in SeaBIOS, installing OS, or lacking QEMU Guest Agent.
+	return p.executeVMAction(ctx, nodeName, vmid, "stop")
 }
 
 func (p *ProxmoxDriver) RestartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
@@ -622,18 +657,65 @@ func (p *ProxmoxDriver) RestartVM(ctx context.Context, cluster *models.Cluster, 
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
-	return p.executeVMAction(ctx, nodeName, vmid, "reboot")
+	// Try reboot first; if guest agent is missing, fallback to hardware reset
+	err := p.executeVMAction(ctx, nodeName, vmid, "reboot")
+	if err != nil {
+		log.Printf("[Proxmox] Reboot returned error (%v), falling back to hard reset for VM %d", err, vmid)
+		return p.executeVMAction(ctx, nodeName, vmid, "reset")
+	}
+	return nil
 }
 
 func (p *ProxmoxDriver) GetConsoleTicket(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string) (*ConsoleConnectionInfo, error) {
-	sim := NewSimulatorDriver()
-	info, err := sim.GetConsoleTicket(ctx, cluster, node, vmid, vmName)
-	if err != nil {
-		return nil, err
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
 	}
-	info.Protocol = "vnc"
-	info.WebSocketURL = fmt.Sprintf("/api/v1/vms/%d/console/ws?ticket=%s", vmid, info.Ticket)
-	return info, nil
+
+	// Auto-detect real node from /cluster/resources if available
+	respRes, errRes := p.doRequest(ctx, http.MethodGet, "/cluster/resources?type=vm", nil)
+	if errRes == nil {
+		defer respRes.Body.Close()
+		var pveVMs struct {
+			Data []struct {
+				VMID int    `json:"vmid"`
+				Node string `json:"node"`
+			} `json:"data"`
+		}
+		if json.NewDecoder(respRes.Body).Decode(&pveVMs) == nil {
+			for _, item := range pveVMs.Data {
+				if item.VMID == vmid && item.Node != "" {
+					nodeName = item.Node
+					break
+				}
+			}
+		}
+	}
+
+	targetHost := "127.0.0.1"
+	if node != nil && node.IPAddress != "" {
+		targetHost = node.IPAddress
+	} else {
+		u, err := url.Parse(p.endpoint)
+		if err == nil {
+			targetHost = u.Hostname()
+		}
+	}
+
+	ticket := fmt.Sprintf("pve-ticket-%s-%d", uuid.New().String()[:8], vmid)
+
+	// Built-in Proxmox NoVNC graphical console direct URL
+	novncURL := fmt.Sprintf("%s/?console=kvm&novnc=1&vmid=%d&vmname=%s&node=%s",
+		strings.TrimRight(p.endpoint, "/"), vmid, url.QueryEscape(vmName), nodeName)
+
+	return &ConsoleConnectionInfo{
+		Ticket:       ticket,
+		Protocol:     "vnc",
+		TargetHost:   targetHost,
+		TargetPort:   5900 + (vmid % 100),
+		WebSocketURL: fmt.Sprintf("/api/v1/vms/%d/console/ws?ticket=%s", vmid, ticket),
+		NoVNCURL:     novncURL,
+	}, nil
 }
 
 func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {

@@ -102,6 +102,54 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 	return &vm, nil
 }
 
+func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualMachine, error) {
+	var vm models.VirtualMachine
+	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+	                v.cpu_cores, v.ram_mb, v.disk_gb,
+	                COALESCE(v.ip_address, '') as ip_address,
+	                COALESCE(v.mac_address, '') as mac_address,
+	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.console_port, 0) as console_port,
+	                COALESCE(v.vmid, 0) as vmid,
+	                v.created_by, v.created_at, v.updated_at,
+	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+              FROM virtual_machines v
+              LEFT JOIN clusters c ON v.cluster_id = c.id
+              LEFT JOIN nodes n ON v.node_id = n.id
+              LEFT JOIN tenants t ON v.tenant_id = t.id
+              WHERE v.vmid = $1 LIMIT 1`
+
+	err := s.db.GetContext(ctx, &vm, query, vmid)
+	if err != nil {
+		return nil, err
+	}
+	return &vm, nil
+}
+
+func (s *VMService) GetAnyActiveVM(ctx context.Context) (*models.VirtualMachine, error) {
+	var vm models.VirtualMachine
+	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+	                v.cpu_cores, v.ram_mb, v.disk_gb,
+	                COALESCE(v.ip_address, '') as ip_address,
+	                COALESCE(v.mac_address, '') as mac_address,
+	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.console_port, 0) as console_port,
+	                COALESCE(v.vmid, 0) as vmid,
+	                v.created_by, v.created_at, v.updated_at,
+	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+              FROM virtual_machines v
+              LEFT JOIN clusters c ON v.cluster_id = c.id
+              LEFT JOIN nodes n ON v.node_id = n.id
+              LEFT JOIN tenants t ON v.tenant_id = t.id
+              ORDER BY (v.status = 'RUNNING') DESC, v.updated_at DESC LIMIT 1`
+
+	err := s.db.GetContext(ctx, &vm, query)
+	if err != nil {
+		return nil, err
+	}
+	return &vm, nil
+}
+
 func (s *VMService) getClusterSafely(ctx context.Context, clusterID string) (*models.Cluster, error) {
 	var cluster models.Cluster
 	query := `

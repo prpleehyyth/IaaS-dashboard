@@ -11,6 +11,7 @@ type ConsoleConnectionInfo struct {
 	TargetHost   string `json:"target_host"`
 	TargetPort   int    `json:"target_port"`
 	WebSocketURL string `json:"websocket_url"`
+	NoVNCURL     string `json:"novnc_url,omitempty"`
 }
 
 type HypervisorDriver interface {

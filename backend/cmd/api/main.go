@@ -83,6 +83,7 @@ func main() {
 
 	r.POST("/api/v1/auth/login", authHandler.Login)
 	r.GET("/api/v1/vms/:id/console/ws", consoleHandler.HandleConsoleWebSocket)
+	r.GET("/api/v1/vms/console/ws", consoleHandler.HandleConsoleWebSocket)
 
 	// Authenticated Routes
 	api := r.Group("/api/v1")

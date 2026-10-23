@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal, Maximize2, Minimize2, X, RefreshCw, Copy, Check } from 'lucide-react';
+import { Terminal, Maximize2, Minimize2, X, RefreshCw, Copy, Check, ExternalLink } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function VMConsoleModal({ vm, onClose }) {
@@ -157,6 +157,30 @@ export default function VMConsoleModal({ vm, onClose }) {
                 ({vm.hypervisor_type} • {session?.protocol ? session.protocol.toUpperCase() : 'VNC/WebMKS'})
               </span>
             </div>
+
+            {session?.novnc_url && (
+              <a
+                href={session.novnc_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+                style={{
+                  fontSize: '0.74rem',
+                  padding: '3px 10px',
+                  color: '#38bdf8',
+                  borderColor: 'rgba(56, 189, 248, 0.4)',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textDecoration: 'none'
+                }}
+                title="Buka Grafis Proxmox NoVNC Viewer (Layar OS / BIOS Installer)"
+              >
+                <ExternalLink size={12} />
+                <span>Buka NoVNC GUI</span>
+              </a>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
