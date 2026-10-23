@@ -144,7 +144,7 @@ type VirtualMachine struct {
 	OSType         string         `json:"os_type" db:"os_type"`
 	ConsolePort    int            `json:"console_port" db:"console_port"`
 	VMID           int            `json:"vmid" db:"vmid"`
-	CreatedBy      uuid.UUID      `json:"created_by" db:"created_by"`
+	CreatedBy      *uuid.UUID     `json:"created_by,omitempty" db:"created_by"`
 	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at" db:"updated_at"`
 
@@ -227,6 +227,7 @@ type CreateClusterRequest struct {
 	AuthUser       string         `json:"auth_user"`
 	AuthSecret     string         `json:"auth_secret"`
 	InsecureSSL    bool           `json:"insecure_ssl"`
+	Version        string         `json:"version"`
 	TotalCPUCores  int            `json:"total_cpu_cores"`
 	TotalRAMGB     int            `json:"total_ram_gb"`
 	TotalStorageTB float64        `json:"total_storage_tb"`

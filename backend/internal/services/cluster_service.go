@@ -32,10 +32,27 @@ func NewClusterService(db *sqlx.DB, redis *database.RedisClient, driverFactory *
 
 func (s *ClusterService) EnsureSchema(ctx context.Context) {
 	migrations := []string{
-		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_user VARCHAR(150);`,
-		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_secret TEXT;`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_user VARCHAR(150) DEFAULT '';`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS auth_secret TEXT DEFAULT '';`,
 		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS insecure_ssl BOOLEAN DEFAULT true;`,
-		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS version VARCHAR(50);`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS version VARCHAR(50) DEFAULT '';`,
+		`ALTER TABLE clusters ALTER COLUMN version SET DEFAULT '';`,
+		`ALTER TABLE clusters ALTER COLUMN description SET DEFAULT '';`,
+		`ALTER TABLE clusters ALTER COLUMN auth_user SET DEFAULT '';`,
+		`ALTER TABLE clusters ALTER COLUMN auth_secret SET DEFAULT '';`,
+		`UPDATE clusters SET version = '' WHERE version IS NULL;`,
+		`UPDATE clusters SET description = '' WHERE description IS NULL;`,
+		`UPDATE clusters SET auth_user = '' WHERE auth_user IS NULL;`,
+		`UPDATE clusters SET auth_secret = '' WHERE auth_secret IS NULL;`,
+
+		`ALTER TABLE virtual_machines ALTER COLUMN ip_address SET DEFAULT '';`,
+		`ALTER TABLE virtual_machines ALTER COLUMN mac_address SET DEFAULT '';`,
+		`ALTER TABLE virtual_machines ALTER COLUMN console_port SET DEFAULT 0;`,
+		`ALTER TABLE virtual_machines ALTER COLUMN vmid SET DEFAULT 0;`,
+		`UPDATE virtual_machines SET ip_address = '' WHERE ip_address IS NULL;`,
+		`UPDATE virtual_machines SET mac_address = '' WHERE mac_address IS NULL;`,
+		`UPDATE virtual_machines SET console_port = 0 WHERE console_port IS NULL;`,
+		`UPDATE virtual_machines SET vmid = 0 WHERE vmid IS NULL;`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m)
@@ -45,7 +62,18 @@ func (s *ClusterService) EnsureSchema(ctx context.Context) {
 func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.Cluster, error) {
 	s.EnsureSchema(ctx)
 	clusters := []models.Cluster{}
-	err := s.db.SelectContext(ctx, &clusters, `SELECT * FROM clusters ORDER BY type DESC, name ASC`)
+	query := `
+		SELECT id, name, type, datacenter, endpoint, 
+		       COALESCE(auth_user, '') as auth_user, 
+		       COALESCE(auth_secret, '') as auth_secret, 
+		       insecure_ssl, 
+		       COALESCE(version, '') as version, 
+		       status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		       COALESCE(description, '') as description, 
+		       created_at 
+		FROM clusters ORDER BY type DESC, name ASC
+	`
+	err := s.db.SelectContext(ctx, &clusters, query)
 	if err != nil {
 		return clusters, err
 	}
@@ -73,7 +101,18 @@ func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.
 func (s *ClusterService) GetClusterByID(ctx context.Context, clusterID string) (*models.Cluster, error) {
 	s.EnsureSchema(ctx)
 	var cluster models.Cluster
-	err := s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, clusterID)
+	query := `
+		SELECT id, name, type, datacenter, endpoint, 
+		       COALESCE(auth_user, '') as auth_user, 
+		       COALESCE(auth_secret, '') as auth_secret, 
+		       insecure_ssl, 
+		       COALESCE(version, '') as version, 
+		       status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		       COALESCE(description, '') as description, 
+		       created_at 
+		FROM clusters WHERE id = $1
+	`
+	err := s.db.GetContext(ctx, &cluster, query, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,15 +134,22 @@ func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClu
 		req.ID = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 	}
 	query := `
-		INSERT INTO clusters (id, name, type, datacenter, endpoint, auth_user, auth_secret, insecure_ssl, status, total_cpu_cores, total_ram_gb, total_storage_tb, description)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ONLINE', $9, $10, $11, $12)
-		RETURNING *
+		INSERT INTO clusters (id, name, type, datacenter, endpoint, auth_user, auth_secret, insecure_ssl, status, total_cpu_cores, total_ram_gb, total_storage_tb, description, version)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ONLINE', $9, $10, $11, $12, $13)
+		RETURNING id, name, type, datacenter, endpoint, 
+		          COALESCE(auth_user, '') as auth_user, 
+		          COALESCE(auth_secret, '') as auth_secret, 
+		          insecure_ssl, 
+		          COALESCE(version, '') as version, 
+		          status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		          COALESCE(description, '') as description, 
+		          created_at
 	`
 	var cluster models.Cluster
 	err := s.db.GetContext(ctx, &cluster, query,
 		req.ID, req.Name, req.Type, req.Datacenter, req.Endpoint,
 		req.AuthUser, req.AuthSecret, req.InsecureSSL,
-		req.TotalCPUCores, req.TotalRAMGB, req.TotalStorageTB, req.Description,
+		req.TotalCPUCores, req.TotalRAMGB, req.TotalStorageTB, req.Description, req.Version,
 	)
 	if err != nil {
 		return nil, err
@@ -112,11 +158,15 @@ func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClu
 
 	// If AutoDiscover is checked, query the hypervisor immediately!
 	if req.AutoDiscover {
-		_, _ = s.SyncCluster(ctx, cluster.ID)
-		_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, cluster.ID)
-		var nodes []models.Node
-		_ = s.db.SelectContext(ctx, &nodes, `SELECT * FROM nodes WHERE cluster_id = $1 ORDER BY name ASC`, cluster.ID)
-		cluster.Nodes = nodes
+		synced, err := s.SyncCluster(ctx, cluster.ID)
+		if err == nil && synced != nil {
+			cluster = *synced
+		} else {
+			clusterPtr, _ := s.GetClusterByID(ctx, cluster.ID)
+			if clusterPtr != nil {
+				cluster = *clusterPtr
+			}
+		}
 	}
 
 	return &cluster, nil
@@ -201,17 +251,35 @@ func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.T
 
 func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*models.Cluster, error) {
 	var cluster models.Cluster
-	if err := s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, clusterID); err != nil {
+	query := `
+		SELECT id, name, type, datacenter, endpoint, 
+		       COALESCE(auth_user, '') as auth_user, 
+		       COALESCE(auth_secret, '') as auth_secret, 
+		       insecure_ssl, 
+		       COALESCE(version, '') as version, 
+		       status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		       COALESCE(description, '') as description, 
+		       created_at 
+		FROM clusters WHERE id = $1
+	`
+	if err := s.db.GetContext(ctx, &cluster, query, clusterID); err != nil {
 		return nil, fmt.Errorf("cluster not found: %w", err)
 	}
 
 	driver := s.driverFactory.GetDriverForCluster(&cluster)
 
+	// Fetch / update version if possible
+	testRes, err := driver.TestConnection(ctx, &cluster)
+	if err == nil && testRes != nil && testRes.Version != "" {
+		cluster.Version = testRes.Version
+		_, _ = s.db.ExecContext(ctx, `UPDATE clusters SET version = $1 WHERE id = $2`, testRes.Version, cluster.ID)
+	}
+
 	// 1. Discover Nodes
 	discoveredNodes, err := driver.DiscoverNodes(ctx, &cluster)
 	if err == nil && len(discoveredNodes) > 0 {
 		for _, n := range discoveredNodes {
-			query := `
+			nodeQuery := `
 				INSERT INTO nodes (id, cluster_id, name, ip_address, status, cpu_model, cpu_cores, cpu_usage_pct, ram_total_gb, ram_usage_gb, storage_total_gb, storage_usage_gb, uptime_seconds)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 				ON CONFLICT (id) DO UPDATE SET
@@ -224,7 +292,7 @@ func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*mo
 					storage_total_gb = EXCLUDED.storage_total_gb,
 					uptime_seconds = EXCLUDED.uptime_seconds
 			`
-			_, _ = s.db.ExecContext(ctx, query,
+			_, _ = s.db.ExecContext(ctx, nodeQuery,
 				n.ID, cluster.ID, n.Name, n.IPAddress, n.Status, n.CPUModel, n.CPUCores, n.CPUUsagePct, n.RAMTotalGB, n.RAMUsageGB, n.StorageTotalGB, n.StorageUsageGB, n.UptimeSeconds,
 			)
 		}
@@ -237,12 +305,12 @@ func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*mo
 		_ = s.db.GetContext(ctx, &tenantID, `SELECT id FROM tenants LIMIT 1`)
 
 		for _, vm := range discoveredVMs {
-			query := `
-				INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			vmQuery := `
+				INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type, ip_address, mac_address, console_port)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', '', 0)
 				ON CONFLICT (id) DO NOTHING
 			`
-			_, _ = s.db.ExecContext(ctx, query,
+			_, _ = s.db.ExecContext(ctx, vmQuery,
 				vm.ID, tenantID, cluster.ID, vm.NodeID, cluster.Type, vm.Name, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.VMID, vm.OSType,
 			)
 		}

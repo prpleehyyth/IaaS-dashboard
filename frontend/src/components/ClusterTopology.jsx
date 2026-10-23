@@ -163,6 +163,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
         auth_user: authUser.trim(),
         auth_secret: authSecret.trim(),
         insecure_ssl: insecureSSL,
+        version: testResult?.version || '',
         auto_discover: autoDiscover,
         description: description.trim(),
       });

@@ -38,15 +38,15 @@ CREATE TABLE IF NOT EXISTS clusters (
     type VARCHAR(20) NOT NULL CHECK (type IN ('VMWARE', 'PROXMOX')),
     datacenter VARCHAR(100) NOT NULL,
     endpoint VARCHAR(255) NOT NULL,
-    auth_user VARCHAR(150),
-    auth_secret TEXT,
+    auth_user VARCHAR(150) DEFAULT '',
+    auth_secret TEXT DEFAULT '',
     insecure_ssl BOOLEAN DEFAULT true,
-    version VARCHAR(50),
+    version VARCHAR(50) DEFAULT '',
     status VARCHAR(20) DEFAULT 'ONLINE',
     total_cpu_cores INT DEFAULT 0,
     total_ram_gb INT DEFAULT 0,
     total_storage_tb NUMERIC(10, 2) DEFAULT 0,
-    description TEXT,
+    description TEXT DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -80,11 +80,11 @@ CREATE TABLE IF NOT EXISTS virtual_machines (
     cpu_cores INT NOT NULL DEFAULT 2,
     ram_mb INT NOT NULL DEFAULT 4096,
     disk_gb INT NOT NULL DEFAULT 50,
-    ip_address VARCHAR(45),
-    mac_address VARCHAR(45),
+    ip_address VARCHAR(45) DEFAULT '',
+    mac_address VARCHAR(45) DEFAULT '',
     os_type VARCHAR(50) DEFAULT 'Ubuntu 22.04 LTS',
-    console_port INT,
-    vmid INT, -- Proxmox VMID or VMware MoRef
+    console_port INT DEFAULT 0,
+    vmid INT DEFAULT 0, -- Proxmox VMID or VMware MoRef
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

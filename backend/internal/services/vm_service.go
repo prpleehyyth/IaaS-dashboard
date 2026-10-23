@@ -36,7 +36,15 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 
 	if role == models.RoleAdmin {
 		// Admin sees all VMs across clusters with relational names
-		query = `SELECT v.*, c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+		query = `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+		                v.cpu_cores, v.ram_mb, v.disk_gb,
+		                COALESCE(v.ip_address, '') as ip_address,
+		                COALESCE(v.mac_address, '') as mac_address,
+		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.console_port, 0) as console_port,
+		                COALESCE(v.vmid, 0) as vmid,
+		                v.created_by, v.created_at, v.updated_at,
+		                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
                  FROM virtual_machines v
                  LEFT JOIN clusters c ON v.cluster_id = c.id
                  LEFT JOIN nodes n ON v.node_id = n.id
@@ -45,7 +53,15 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		err = s.db.SelectContext(ctx, &vms, query)
 	} else {
 		// Operator sees only VMs explicitly assigned to their user account
-		query = `SELECT v.*, c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+		query = `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+		                v.cpu_cores, v.ram_mb, v.disk_gb,
+		                COALESCE(v.ip_address, '') as ip_address,
+		                COALESCE(v.mac_address, '') as mac_address,
+		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.console_port, 0) as console_port,
+		                COALESCE(v.vmid, 0) as vmid,
+		                v.created_by, v.created_at, v.updated_at,
+		                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
                  FROM virtual_machines v
                  INNER JOIN user_vm_assignments a ON v.id = a.vm_id
                  LEFT JOIN clusters c ON v.cluster_id = c.id
@@ -61,7 +77,15 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 
 func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.VirtualMachine, error) {
 	var vm models.VirtualMachine
-	query := `SELECT v.*, c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+	                v.cpu_cores, v.ram_mb, v.disk_gb,
+	                COALESCE(v.ip_address, '') as ip_address,
+	                COALESCE(v.mac_address, '') as mac_address,
+	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.console_port, 0) as console_port,
+	                COALESCE(v.vmid, 0) as vmid,
+	                v.created_by, v.created_at, v.updated_at,
+	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
               FROM virtual_machines v
               LEFT JOIN clusters c ON v.cluster_id = c.id
               LEFT JOIN nodes n ON v.node_id = n.id
@@ -142,7 +166,7 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
 		OSType:         req.OSType,
 		ConsolePort:    5900 + (vmid % 100),
 		VMID:           vmid,
-		CreatedBy:      userID,
+		CreatedBy:      &userID,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
