@@ -50,11 +50,27 @@ func (s *ConsoleService) RequestConsoleTicket(ctx context.Context, vmID uuid.UUI
 	}
 
 	var cluster models.Cluster
-	_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, vm.ClusterID)
+	query := `
+		SELECT id, name, type, datacenter, endpoint, 
+		       COALESCE(auth_user, '') as auth_user, 
+		       COALESCE(auth_secret, '') as auth_secret, 
+		       insecure_ssl, 
+		       COALESCE(version, '') as version, 
+		       status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		       COALESCE(description, '') as description, 
+		       created_at 
+		FROM clusters WHERE id = $1
+	`
+	_ = s.db.GetContext(ctx, &cluster, query, vm.ClusterID)
 	var node models.Node
-	_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1`, vm.NodeID)
+	if vm.NodeID != "" {
+		_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+	}
+	if node.ID == "" {
+		node.ID = vm.NodeID
+	}
 
-	driver := s.driverFactory.GetDriver(vm.HypervisorType)
+	driver := s.driverFactory.GetDriverForCluster(&cluster)
 	connInfo, err := driver.GetConsoleTicket(ctx, &cluster, &node, vm.VMID, vm.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate hypervisor console ticket: %w", err)

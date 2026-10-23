@@ -54,7 +54,9 @@ func (p *ProxmoxDriver) doRequest(ctx context.Context, method, path string, body
 	if p.tokenID != "" && p.tokenSecret != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", p.tokenID, p.tokenSecret))
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	return p.client.Do(req)
 }
@@ -309,47 +311,125 @@ func (p *ProxmoxDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Clust
 }
 
 func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
-	sim := NewSimulatorDriver()
-	return sim.DeleteVM(ctx, cluster, node, vmid)
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+	if nodeName == "" {
+		nodeName = "pve"
+	}
+
+	// Try QEMU delete
+	resp, err := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/qemu/%d", nodeName, vmid), nil)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+	}
+
+	// Try LXC delete
+	respLXC, errLXC := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/lxc/%d", nodeName, vmid), nil)
+	if errLXC == nil {
+		defer respLXC.Body.Close()
+		if respLXC.StatusCode >= 200 && respLXC.StatusCode < 300 {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vmid int, action string) error {
+	if nodeName == "" {
+		// Auto-detect node name from Proxmox if not provided
+		resp, err := p.doRequest(ctx, http.MethodGet, "/nodes", nil)
+		if err == nil {
+			defer resp.Body.Close()
+			var pveNodes struct {
+				Data []struct {
+					Node string `json:"node"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&pveNodes) == nil && len(pveNodes.Data) > 0 {
+				nodeName = pveNodes.Data[0].Node
+			}
+		}
+		if nodeName == "" {
+			nodeName = "pve"
+		}
+	}
+
+	// 1. Try QEMU path first
+	qemuPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", nodeName, vmid, action)
+	resp, err := p.doRequest(ctx, http.MethodPost, qemuPath, nil)
+	if err == nil {
+		defer resp.Body.Close()
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyStr := string(bodyBytes)
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			log.Printf("[Proxmox] Successfully executed '%s' on QEMU VM %d (node %s): %s", action, vmid, nodeName, bodyStr)
+			return nil
+		}
+		lowerBody := strings.ToLower(bodyStr)
+		if strings.Contains(lowerBody, "already running") || strings.Contains(lowerBody, "not running") || strings.Contains(lowerBody, "already stopped") {
+			log.Printf("[Proxmox] VM %d state is already aligned with action '%s': %s", vmid, action, bodyStr)
+			return nil
+		}
+		log.Printf("[Proxmox] QEMU '%s' on VM %d returned HTTP %d: %s. Trying LXC container path...", action, vmid, resp.StatusCode, bodyStr)
+	}
+
+	// 2. Try LXC path (in case it is an LXC Container)
+	lxcPath := fmt.Sprintf("/nodes/%s/lxc/%d/status/%s", nodeName, vmid, action)
+	respLXC, errLXC := p.doRequest(ctx, http.MethodPost, lxcPath, nil)
+	if errLXC == nil {
+		defer respLXC.Body.Close()
+		bodyBytes, _ := io.ReadAll(respLXC.Body)
+		bodyStr := string(bodyBytes)
+		if respLXC.StatusCode >= 200 && respLXC.StatusCode < 300 {
+			log.Printf("[Proxmox] Successfully executed '%s' on LXC %d (node %s): %s", action, vmid, nodeName, bodyStr)
+			return nil
+		}
+		lowerBody := strings.ToLower(bodyStr)
+		if strings.Contains(lowerBody, "already running") || strings.Contains(lowerBody, "not running") || strings.Contains(lowerBody, "already stopped") {
+			log.Printf("[Proxmox] LXC %d state is already aligned with action '%s': %s", vmid, action, bodyStr)
+			return nil
+		}
+		return fmt.Errorf("Proxmox error (HTTP %d): %s", respLXC.StatusCode, bodyStr)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to reach Proxmox at %s: %w", p.endpoint, err)
+	}
+	return fmt.Errorf("failed to execute power action '%s' on Proxmox VMID %d", action, vmid)
 }
 
 func (p *ProxmoxDriver) StartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
-	resp, err := p.doRequest(ctx, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%d/status/start", node.ID, vmid), nil)
-	if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == 200) {
-		defer resp.Body.Close()
-		log.Printf("Successfully triggered Proxmox Start on VMID %d", vmid)
-		return nil
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
 	}
-
-	sim := NewSimulatorDriver()
-	return sim.StartVM(ctx, cluster, node, vmid)
+	return p.executeVMAction(ctx, nodeName, vmid, "start")
 }
 
 func (p *ProxmoxDriver) StopVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, force bool) error {
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
 	action := "shutdown"
 	if force {
 		action = "stop"
 	}
-	resp, err := p.doRequest(ctx, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", node.ID, vmid, action), nil)
-	if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == 200) {
-		defer resp.Body.Close()
-		log.Printf("Successfully triggered Proxmox %s on VMID %d", action, vmid)
-		return nil
-	}
-
-	sim := NewSimulatorDriver()
-	return sim.StopVM(ctx, cluster, node, vmid, force)
+	return p.executeVMAction(ctx, nodeName, vmid, action)
 }
 
 func (p *ProxmoxDriver) RestartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
-	resp, err := p.doRequest(ctx, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%d/status/reboot", node.ID, vmid), nil)
-	if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == 200) {
-		defer resp.Body.Close()
-		return nil
+	nodeName := ""
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
 	}
-
-	sim := NewSimulatorDriver()
-	return sim.RestartVM(ctx, cluster, node, vmid)
+	return p.executeVMAction(ctx, nodeName, vmid, "reboot")
 }
 
 func (p *ProxmoxDriver) GetConsoleTicket(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string) (*ConsoleConnectionInfo, error) {

@@ -32,6 +32,9 @@ func (f *DriverFactory) GetDriverForCluster(cluster *models.Cluster) HypervisorD
 	if f.cfg.HypervisorMode == "SIMULATOR" {
 		return NewSimulatorDriver()
 	}
+	if cluster == nil {
+		return NewSimulatorDriver()
+	}
 
 	switch cluster.Type {
 	case models.HypervisorProxmox:

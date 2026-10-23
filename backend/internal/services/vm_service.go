@@ -102,6 +102,25 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 	return &vm, nil
 }
 
+func (s *VMService) getClusterSafely(ctx context.Context, clusterID string) (*models.Cluster, error) {
+	var cluster models.Cluster
+	query := `
+		SELECT id, name, type, datacenter, endpoint, 
+		       COALESCE(auth_user, '') as auth_user, 
+		       COALESCE(auth_secret, '') as auth_secret, 
+		       insecure_ssl, 
+		       COALESCE(version, '') as version, 
+		       status, total_cpu_cores, total_ram_gb, total_storage_tb, 
+		       COALESCE(description, '') as description, 
+		       created_at 
+		FROM clusters WHERE id = $1
+	`
+	if err := s.db.GetContext(ctx, &cluster, query, clusterID); err != nil {
+		return nil, err
+	}
+	return &cluster, nil
+}
+
 func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, req models.CreateVMRequest) (*models.VirtualMachine, error) {
 	// 1. Check Tenant Quota
 	var tenant models.Tenant
@@ -122,18 +141,18 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
                                  FROM virtual_machines WHERE tenant_id = $1`, tenantID)
 
 	if u.Count+1 > tenant.MaxVMs {
-		return nil, fmt.Errorf("quota exceeded: maximum VM count limit (%d) reached", tenant.MaxVMs)
+		return nil, fmt.Errorf("quota exceeded: tenant maximum VM limit (%d) reached", tenant.MaxVMs)
 	}
 	if u.CPU+req.CPUCores > tenant.MaxCPU {
-		return nil, fmt.Errorf("quota exceeded: requested vCPU (%d) exceeds remaining quota (%d)", req.CPUCores, tenant.MaxCPU-u.CPU)
+		return nil, fmt.Errorf("quota exceeded: requested vCPU exceeds tenant limit (%d cores)", tenant.MaxCPU)
 	}
 	if (u.RAM+req.RAMMB)/1024 > tenant.MaxRAMGB {
 		return nil, fmt.Errorf("quota exceeded: requested RAM exceeds tenant limit (%d GB)", tenant.MaxRAMGB)
 	}
 
 	// 2. Fetch Cluster & Node
-	var cluster models.Cluster
-	if err := s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, req.ClusterID); err != nil {
+	cluster, err := s.getClusterSafely(ctx, req.ClusterID)
+	if err != nil {
 		return nil, fmt.Errorf("target cluster not found: %w", err)
 	}
 
@@ -143,8 +162,8 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
 	}
 
 	// 3. Invoke Hypervisor Driver
-	driver := s.driverFactory.GetDriver(cluster.Type)
-	vmid, ip, mac, err := driver.CreateVM(ctx, &cluster, &node, req)
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	vmid, ip, mac, err := driver.CreateVM(ctx, cluster, &node, req)
 	if err != nil {
 		return nil, fmt.Errorf("hypervisor failed to provision VM: %w", err)
 	}
@@ -196,13 +215,12 @@ func (s *VMService) UpdateVMSpecs(ctx context.Context, vmID, userID uuid.UUID, r
 		return nil, err
 	}
 
-	var cluster models.Cluster
-	_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, vm.ClusterID)
+	cluster, _ := s.getClusterSafely(ctx, vm.ClusterID)
 	var node models.Node
 	_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1`, vm.NodeID)
 
-	driver := s.driverFactory.GetDriver(vm.HypervisorType)
-	if err := driver.UpdateVMSpecs(ctx, &cluster, &node, vm.VMID, req); err != nil {
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	if err := driver.UpdateVMSpecs(ctx, cluster, &node, vm.VMID, req); err != nil {
 		return nil, fmt.Errorf("hypervisor spec reconfiguration failed: %w", err)
 	}
 
@@ -237,13 +255,12 @@ func (s *VMService) DeleteVM(ctx context.Context, vmID, userID uuid.UUID) error 
 		return err
 	}
 
-	var cluster models.Cluster
-	_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, vm.ClusterID)
+	cluster, _ := s.getClusterSafely(ctx, vm.ClusterID)
 	var node models.Node
 	_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1`, vm.NodeID)
 
-	driver := s.driverFactory.GetDriver(vm.HypervisorType)
-	_ = driver.DeleteVM(ctx, &cluster, &node, vm.VMID)
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	_ = driver.DeleteVM(ctx, cluster, &node, vm.VMID)
 
 	_, err = s.db.ExecContext(ctx, `DELETE FROM virtual_machines WHERE id = $1`, vmID)
 	if err != nil {
@@ -277,39 +294,40 @@ func (s *VMService) ExecutePowerAction(ctx context.Context, vmID, userID, tenant
 	}
 	defer s.redis.ReleaseLock(ctx, lockKey)
 
-	var cluster models.Cluster
-	_ = s.db.GetContext(ctx, &cluster, `SELECT * FROM clusters WHERE id = $1`, vm.ClusterID)
+	cluster, err := s.getClusterSafely(ctx, vm.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("cluster '%s' not found for VM: %w", vm.ClusterID, err)
+	}
 	var node models.Node
-	_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1`, vm.NodeID)
+	if vm.NodeID != "" {
+		_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+	}
+	if node.ID == "" {
+		node.ID = vm.NodeID
+	}
 
-	driver := s.driverFactory.GetDriver(vm.HypervisorType)
+	driver := s.driverFactory.GetDriverForCluster(cluster)
 
 	var targetStatus models.VMStatus
 	var logAction string
 
 	switch action {
 	case "start":
-		if vm.Status == models.VMStatusRunning {
-			return vm, nil // Already running
-		}
-		if err := driver.StartVM(ctx, &cluster, &node, vm.VMID); err != nil {
+		if err := driver.StartVM(ctx, cluster, &node, vm.VMID); err != nil {
 			return nil, err
 		}
 		targetStatus = models.VMStatusRunning
 		logAction = "START_VM"
 
 	case "stop":
-		if vm.Status == models.VMStatusStopped {
-			return vm, nil // Already stopped
-		}
-		if err := driver.StopVM(ctx, &cluster, &node, vm.VMID, force); err != nil {
+		if err := driver.StopVM(ctx, cluster, &node, vm.VMID, force); err != nil {
 			return nil, err
 		}
 		targetStatus = models.VMStatusStopped
 		logAction = "STOP_VM"
 
 	case "restart":
-		if err := driver.RestartVM(ctx, &cluster, &node, vm.VMID); err != nil {
+		if err := driver.RestartVM(ctx, cluster, &node, vm.VMID); err != nil {
 			return nil, err
 		}
 		targetStatus = models.VMStatusRunning
