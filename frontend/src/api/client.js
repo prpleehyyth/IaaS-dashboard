@@ -178,6 +178,26 @@ class ApiClient {
     });
   }
 
+  async createConsoleSession(id) {
+    return this.requestConsoleSession(id);
+  }
+
+  getConsoleWsUrl(tokenOrUrl, vmId) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    
+    // If it's already a full relative path like /api/v1/vms/.../ws?ticket=...
+    if (typeof tokenOrUrl === 'string' && tokenOrUrl.startsWith('/')) {
+      return `${proto}//${host}${tokenOrUrl}`;
+    }
+
+    const ticket = tokenOrUrl || '';
+    if (vmId) {
+      return `${proto}//${host}/api/v1/vms/${vmId}/console/ws?ticket=${ticket}`;
+    }
+    return `${proto}//${host}/api/v1/vms/console/ws?ticket=${ticket}`;
+  }
+
   // Tenant & Metering Endpoints
   async getTenants() {
     return this.request('/tenants');

@@ -27,7 +27,9 @@ export default function VMConsoleModal({ vm, onClose }) {
         setTerminalOutput(prev => prev + `\x1b[1;33m[Connecting]\x1b[0m Establishing multiplexed WebSocket telemetry stream...\r\n\r\n`);
 
         // Connect to WebSocket
-        const wsUrl = api.getConsoleWsUrl(sess.token);
+        const wsUrl = sess.websocket_url 
+          ? api.getConsoleWsUrl(sess.websocket_url)
+          : api.getConsoleWsUrl(sess.ticket || sess.token, vm.id);
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 

@@ -11,11 +11,11 @@ COPY go.mod go.sum* ./
 # Copy all source code so go mod tidy can resolve all imported packages
 COPY . .
 
-# Generate go.sum and tidy dependencies (requires source to be present)
-RUN go mod tidy
-
-# Build binary (-mod=mod allows go.sum updates during build as a safety net)
-RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -ldflags="-w -s" -o /iaas-api ./cmd/api/main.go
+# Generate go.sum, tidy dependencies, and build binary with BuildKit cache mounts
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -mod=mod -ldflags="-w -s" -o /iaas-api ./cmd/api/main.go
 
 # Final minimal runner stage
 FROM alpine:3.19

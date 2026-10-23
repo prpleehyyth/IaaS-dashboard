@@ -273,6 +273,7 @@ type ConsoleSessionResponse struct {
 	VMID         string `json:"vm_id"`
 	VMName       string `json:"vm_name"`
 	Ticket       string `json:"ticket"`
+	Token        string `json:"token,omitempty"`
 	WebSocketURL string `json:"websocket_url"`
 	Protocol     string `json:"protocol"` // "vnc" or "webmks"
 	Host         string `json:"host"`

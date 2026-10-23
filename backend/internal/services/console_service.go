@@ -82,11 +82,13 @@ func (s *ConsoleService) RequestConsoleTicket(ctx context.Context, vmID uuid.UUI
 	// Log audit event
 	s.vmService.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "OPEN_CONSOLE", "SUCCESS", fmt.Sprintf("Remote console ticket generated for VM '%s' (%s)", vm.Name, connInfo.Protocol))
 
+	wsURL := fmt.Sprintf("/api/v1/vms/%s/console/ws?ticket=%s", vm.ID.String(), connInfo.Ticket)
 	return &models.ConsoleSessionResponse{
 		VMID:         vm.ID.String(),
 		VMName:       vm.Name,
 		Ticket:       connInfo.Ticket,
-		WebSocketURL: connInfo.WebSocketURL,
+		Token:        connInfo.Ticket,
+		WebSocketURL: wsURL,
 		Protocol:     connInfo.Protocol,
 		Host:         connInfo.TargetHost,
 		Port:         connInfo.TargetPort,
