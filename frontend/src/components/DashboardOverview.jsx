@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Server, 
   Cpu, 
@@ -9,10 +9,39 @@ import {
   CheckCircle2, 
   AlertCircle,
   Clock,
-  ArrowUpRight
+  ArrowUpRight,
+  Play,
+  Square,
+  RotateCw,
+  Disc,
+  Wifi,
+  Sparkles
 } from 'lucide-react';
 
-export default function DashboardOverview({ summary, onNavigateTab }) {
+export default function DashboardOverview({ 
+  summary, 
+  vms = [],
+  fleetTelemetry = {},
+  user,
+  onStartVM,
+  onStopVM,
+  onRestartVM,
+  onOpenResourceModal,
+  onOpenRebuildModal,
+  onNavigateTab 
+}) {
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+
+  const handleAction = async (fn, vm) => {
+    if (!fn) return;
+    setActionLoadingId(vm.id);
+    try {
+      await fn(vm);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   if (!summary) {
     return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading cloud infrastructure metrics...</div>;
   }
@@ -250,6 +279,246 @@ export default function DashboardOverview({ summary, onNavigateTab }) {
         )}
       </div>
 
+      {/* Live VM Resource Monitoring & Quick Controls */}
+      <div style={{ marginBottom: '34px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: 700 }}>Direct Resource Monitoring & Quick Controls</h2>
+              <span style={{ 
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: '#059669',
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                padding: '3px 10px',
+                borderRadius: '9999px'
+              }}>
+                <span className="status-dot online" style={{ width: '7px', height: '7px' }}></span>
+                Live Fleet Telemetry
+              </span>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', marginTop: '3px' }}>
+              Pantau penggunaan CPU, RAM, Disk secara langsung dan kontrol virtual machine (Start, Stop, Restart, Rebuild OS)
+            </p>
+          </div>
+          <button 
+            className="btn btn-secondary btn-sm"
+            onClick={() => onNavigateTab('vms')}
+          >
+            <span>Buka VM Management</span>
+            <ArrowUpRight size={14} />
+          </button>
+        </div>
+
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Virtual Machine</th>
+                <th>Status</th>
+                <th>Live CPU Usage</th>
+                <th>Live Memory (RAM)</th>
+                <th>Uptime / Storage</th>
+                <th style={{ textAlign: 'right' }}>Quick Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vms.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '32px' }}>
+                    Belum ada virtual machine yang aktif atau terdaftar untuk akun ini.
+                  </td>
+                </tr>
+              ) : (
+                vms.map((vm) => {
+                  const telem = fleetTelemetry[vm.id];
+                  const isRunning = vm.status === 'RUNNING';
+                  const cpuPct = isRunning ? (telem?.cpu_usage_pct ?? 0) : 0;
+                  const ramPct = isRunning ? (telem?.ram_usage_pct ?? 0) : 0;
+                  const ramMB = isRunning ? (telem?.ram_usage_mb ?? 0) : 0;
+                  const diskPct = isRunning ? (telem?.disk_usage_pct ?? 0) : 0;
+                  const isLoading = actionLoadingId === vm.id;
+
+                  const formatUptimeShort = (secs) => {
+                    if (!secs || secs <= 0) return '0s';
+                    const hrs = Math.floor(secs / 3600);
+                    const mins = Math.floor((secs % 3600) / 60);
+                    if (hrs > 0) return `${hrs}j ${mins}m`;
+                    return `${mins}m`;
+                  };
+
+                  return (
+                    <tr key={vm.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ 
+                            width: '32px', 
+                            height: '32px', 
+                            borderRadius: '8px', 
+                            background: '#eff6ff', 
+                            border: '1px solid #bfdbfe',
+                            color: '#1e3a8a',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '0.8rem'
+                          }}>
+                            <Server size={16} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.92rem' }}>
+                              {vm.name}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                              {vm.os_type || 'Linux'} • {vm.ip_address || 'DHCP'} • {vm.hypervisor_type}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={`status-dot ${isRunning ? 'running' : 'stopped'}`}></span>
+                          <span style={{ 
+                            fontSize: '0.8rem', 
+                            fontWeight: 700, 
+                            color: isRunning ? '#059669' : '#dc2626' 
+                          }}>
+                            {vm.status}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ minWidth: '150px' }}>
+                        {isRunning ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '4px' }}>
+                              <span style={{ color: 'var(--text-dim)', fontWeight: 600 }}>CPU</span>
+                              <span style={{ fontWeight: 800, color: cpuPct > 80 ? '#dc2626' : '#1e3a8a' }}>{cpuPct}%</span>
+                            </div>
+                            <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ 
+                                width: `${Math.min(cpuPct, 100)}%`, 
+                                height: '100%', 
+                                background: cpuPct > 80 ? '#dc2626' : 'linear-gradient(90deg, #1e3a8a, #3b82f6)', 
+                                borderRadius: '3px',
+                                transition: 'width 0.4s ease'
+                              }}></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>Offline (0%)</span>
+                        )}
+                      </td>
+                      <td style={{ minWidth: '150px' }}>
+                        {isRunning ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '4px' }}>
+                              <span style={{ color: 'var(--text-dim)', fontWeight: 600 }}>RAM</span>
+                              <span style={{ fontWeight: 800, color: ramPct > 85 ? '#dc2626' : '#0f172a' }}>
+                                {ramMB > 0 ? `${ramMB} MB` : `${ramPct}%`} ({ramPct}%)
+                              </span>
+                            </div>
+                            <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ 
+                                width: `${Math.min(ramPct, 100)}%`, 
+                                height: '100%', 
+                                background: ramPct > 85 ? '#dc2626' : 'linear-gradient(90deg, #059669, #10b981)', 
+                                borderRadius: '3px',
+                                transition: 'width 0.4s ease'
+                              }}></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>Offline (0 MB)</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {isRunning ? `Uptime: ${formatUptimeShort(telem?.uptime_seconds)}` : 'Stopped'}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                          Disk: {vm.disk_gb} GB {diskPct > 0 ? `(${diskPct}% used)` : ''}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                          {/* Power Start / Stop */}
+                          {isRunning ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              title="Stop VM"
+                              disabled={isLoading}
+                              onClick={() => handleAction(onStopVM, vm)}
+                              style={{ color: '#dc2626', borderColor: 'rgba(239, 68, 68, 0.25)' }}
+                            >
+                              <Square size={12} />
+                              <span>Stop</span>
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-success btn-sm"
+                              title="Start VM"
+                              disabled={isLoading}
+                              onClick={() => handleAction(onStartVM, vm)}
+                            >
+                              <Play size={12} />
+                              <span>Start</span>
+                            </button>
+                          )}
+
+                          {/* Restart */}
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Restart VM"
+                            disabled={!isRunning || isLoading}
+                            onClick={() => handleAction(onRestartVM, vm)}
+                          >
+                            <RotateCw size={12} />
+                          </button>
+
+                          {/* Rebuild OS */}
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Instalasi Ulang OS (Rebuild)"
+                            onClick={() => onOpenRebuildModal && onOpenRebuildModal(vm)}
+                            style={{
+                              color: '#1e3a8a',
+                              borderColor: '#bfdbfe',
+                              background: '#eff6ff'
+                            }}
+                          >
+                            <Disc size={12} />
+                            <span>Rebuild</span>
+                          </button>
+
+                          {/* Live Telemetry Modal */}
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Pantau Resource Langsung (Grafik & Detail)"
+                            onClick={() => onOpenResourceModal && onOpenResourceModal(vm)}
+                            style={{
+                              color: isRunning ? '#059669' : '#475569',
+                              borderColor: isRunning ? '#a7f3d0' : 'var(--border-subtle)',
+                              background: isRunning ? '#ecfdf5' : '#f8fafc'
+                            }}
+                          >
+                            <Activity size={12} />
+                            <span>Monitor</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Activity Logs Table */}
       <div>

@@ -10,6 +10,8 @@ import BillingRatesConfig from './components/BillingRatesConfig';
 import UserManagement from './components/UserManagement';
 import BillingPreview from './components/BillingPreview';
 import LoginModal from './components/LoginModal';
+import RebuildVMModal from './components/RebuildVMModal';
+import VMResourceModal from './components/VMResourceModal';
 import { api } from './api/client';
 
 export default function App() {
@@ -22,12 +24,15 @@ export default function App() {
   const [vms, setVMs] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [users, setUsers] = useState([]);
+  const [fleetTelemetry, setFleetTelemetry] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingVM, setEditingVM] = useState(null);
   const [consoleVM, setConsoleVM] = useState(null);
+  const [rebuildVM, setRebuildVM] = useState(null);
+  const [resourceVM, setResourceVM] = useState(null);
 
   // Notification Toast
   const [toast, setToast] = useState(null);
@@ -53,7 +58,15 @@ export default function App() {
 
       setSummary(sumData);
       setClusters(clusterData || []);
-      setVMs(vmData || []);
+      
+      const seenVMs = new Set();
+      const uniqueVMs = (vmData || []).filter((vm) => {
+        const key = vm.id || `${vm.cluster_id}-${vm.vmid || vm.name}`;
+        if (seenVMs.has(key)) return false;
+        seenVMs.add(key);
+        return true;
+      });
+      setVMs(uniqueVMs);
 
       if (api.isAdmin()) {
         const [tenantData, userData] = await Promise.all([
@@ -62,6 +75,20 @@ export default function App() {
         ]);
         setTenants(tenantData || []);
         setUsers(userData || []);
+      }
+
+      // Fetch live telemetry for VMs
+      try {
+        const telemList = await api.getFleetTelemetry();
+        if (Array.isArray(telemList)) {
+          const telemMap = {};
+          telemList.forEach((t) => {
+            if (t.vm_id) telemMap[t.vm_id] = t;
+          });
+          setFleetTelemetry(telemMap);
+        }
+      } catch (telErr) {
+        console.warn("Fleet telemetry background fetch error:", telErr);
       }
     } catch (err) {
       console.error("Failed to load cloud state:", err);
@@ -78,12 +105,12 @@ export default function App() {
       setLoading(false);
     }
 
-    // Auto-refresh metrics every 20 seconds
+    // Auto-refresh metrics every 15 seconds
     const interval = setInterval(() => {
       if (api.isAuthenticated()) {
         loadData();
       }
-    }, 20000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [loadData]);
@@ -243,6 +270,14 @@ export default function App() {
         {activeTab === 'overview' && (
           <DashboardOverview 
             summary={summary} 
+            vms={vms}
+            fleetTelemetry={fleetTelemetry}
+            user={user}
+            onStartVM={handleStartVM}
+            onStopVM={handleStopVM}
+            onRestartVM={handleRestartVM}
+            onOpenResourceModal={(vm) => setResourceVM(vm)}
+            onOpenRebuildModal={(vm) => setRebuildVM(vm)}
             onNavigateTab={setActiveTab} 
           />
         )}
@@ -260,12 +295,15 @@ export default function App() {
             vms={vms}
             user={user}
             clusters={clusters}
+            fleetTelemetry={fleetTelemetry}
             onStartVM={handleStartVM}
             onStopVM={handleStopVM}
             onRestartVM={handleRestartVM}
             onOpenConsole={(vm) => setConsoleVM(vm)}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onOpenEditModal={(vm) => setEditingVM(vm)}
+            onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+            onOpenResourceModal={(vm) => setResourceVM(vm)}
             onDeleteVM={handleDeleteVM}
           />
         )}
@@ -316,6 +354,26 @@ export default function App() {
         <VMConsoleModal 
           vm={consoleVM}
           onClose={() => setConsoleVM(null)}
+        />
+      )}
+
+      {rebuildVM && (
+        <RebuildVMModal 
+          vm={rebuildVM}
+          clusters={clusters}
+          onClose={() => setRebuildVM(null)}
+          onRebuildSuccess={(msg) => {
+            showToast(msg || `Instalasi ulang OS untuk '${rebuildVM.name}' berhasil diinisialisasi`);
+            setRebuildVM(null);
+            loadData();
+          }}
+        />
+      )}
+
+      {resourceVM && (
+        <VMResourceModal 
+          vm={resourceVM}
+          onClose={() => setResourceVM(null)}
         />
       )}
     </div>

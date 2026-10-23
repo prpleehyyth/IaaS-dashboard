@@ -15,19 +15,24 @@ import {
   HardDrive,
   ShieldAlert,
   Server,
-  Lock
+  Lock,
+  Disc,
+  Activity
 } from 'lucide-react';
 
 export default function VMManagement({ 
   vms, 
   user, 
   clusters,
+  fleetTelemetry = {},
   onStartVM, 
   onStopVM, 
   onRestartVM, 
   onOpenConsole, 
   onOpenCreateModal, 
   onOpenEditModal, 
+  onOpenRebuildModal,
+  onOpenResourceModal,
   onDeleteVM 
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -244,14 +249,40 @@ export default function VMManagement({
                       </div>
                     </td>
 
-                    {/* Specs */}
+                    {/* Specs & Live Resource Usage */}
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.84rem' }}>
-                        <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{vm.cpu_cores} vCPU</span>
-                        <span style={{ color: 'var(--text-dim)' }}>•</span>
-                        <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB RAM</span>
-                        <span style={{ color: 'var(--text-dim)' }}>•</span>
-                        <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                          <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{vm.cpu_cores} vCPU</span>
+                          <span style={{ color: 'var(--text-dim)' }}>•</span>
+                          <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB RAM</span>
+                          <span style={{ color: 'var(--text-dim)' }}>•</span>
+                          <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
+                        </div>
+                        {isRunning && fleetTelemetry[vm.id] && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', fontSize: '0.74rem' }}>
+                            <span style={{ 
+                              background: fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fef2f2' : '#eff6ff', 
+                              border: `1px solid ${fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fecaca' : '#bfdbfe'}`,
+                              color: fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#dc2626' : '#1e3a8a',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700
+                            }}>
+                              CPU: {fleetTelemetry[vm.id].cpu_usage_pct}%
+                            </span>
+                            <span style={{ 
+                              background: fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#fef2f2' : '#f0fdf4', 
+                              border: `1px solid ${fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#fecaca' : '#bbf7d0'}`,
+                              color: fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#dc2626' : '#166534',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700
+                            }}>
+                              RAM: {fleetTelemetry[vm.id].ram_usage_pct}%
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -269,9 +300,9 @@ export default function VMManagement({
                       </div>
                     </td>
 
-                    {/* Actions */}
+                    {/* Vessel Controls (Available to Admin & Non-Admin Operators) */}
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                         {/* Power Start / Stop */}
                         {isRunning ? (
                           <button
@@ -304,6 +335,36 @@ export default function VMManagement({
                           onClick={() => handleAction(onRestartVM, vm)}
                         >
                           <RotateCw size={13} />
+                        </button>
+
+                        {/* Instalasi Ulang OS (Rebuild) - Available to Admin & Operator */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Instalasi Ulang OS (Rebuild) VM"
+                          onClick={() => onOpenRebuildModal && onOpenRebuildModal(vm)}
+                          style={{
+                            color: '#1e3a8a',
+                            borderColor: '#bfdbfe',
+                            background: '#eff6ff'
+                          }}
+                        >
+                          <Disc size={13} />
+                          <span>Rebuild</span>
+                        </button>
+
+                        {/* Live Resource Monitor - Available to Admin & Operator */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Pantau Penggunaan Resource Langsung (CPU, RAM, Disk, Net)"
+                          onClick={() => onOpenResourceModal && onOpenResourceModal(vm)}
+                          style={{
+                            color: isRunning ? '#059669' : '#475569',
+                            borderColor: isRunning ? '#a7f3d0' : 'var(--border-subtle)',
+                            background: isRunning ? '#ecfdf5' : '#f8fafc'
+                          }}
+                        >
+                          <Activity size={13} />
+                          <span>Monitor</span>
                         </button>
 
                         {/* Interactive Console */}

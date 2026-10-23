@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -69,6 +70,57 @@ func (s *SimulatorDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Clu
 func (s *SimulatorDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
 	// Simulated hypervisor unregister and storage purge
 	return nil
+}
+
+func (s *SimulatorDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.RebuildVMRequest) error {
+	time.Sleep(200 * time.Millisecond)
+	return nil
+}
+
+func (s *SimulatorDriver) GetVMTelemetry(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vm *models.VirtualMachine) (*models.VMTelemetry, error) {
+	if vm == nil {
+		return &models.VMTelemetry{}, nil
+	}
+
+	isRunning := vm.Status == models.VMStatusRunning
+	cpuPct := 0.0
+	ramUsedMB := 0
+	ramPct := 0.0
+	diskUsedGB := float64(vm.DiskGB) * 0.35
+	diskPct := 35.0
+	uptime := int64(0)
+	netIn := int64(0)
+	netOut := int64(0)
+
+	if isRunning {
+		seed := int(time.Now().Unix()/5) + vmid
+		randGen := rand.New(rand.NewSource(int64(seed)))
+		cpuPct = math.Round((5.0+randGen.Float64()*35.0)*10) / 10
+		ramPct = math.Round((25.0+randGen.Float64()*40.0)*10) / 10
+		ramUsedMB = int(float64(vm.RAMMB) * (ramPct / 100.0))
+		uptime = 3600*4 + int64((vmid*37)%86400)
+		netIn = int64(1024 * 1024 * (50 + (vmid % 200)))
+		netOut = int64(1024 * 1024 * (20 + (vmid % 100)))
+	}
+
+	return &models.VMTelemetry{
+		VMID:           vm.ID,
+		VMName:         vm.Name,
+		Status:         string(vm.Status),
+		CPUCores:       vm.CPUCores,
+		CPUUsagePct:    cpuPct,
+		RAMMB:          vm.RAMMB,
+		RAMUsageMB:     ramUsedMB,
+		RAMUsagePct:    ramPct,
+		DiskGB:         vm.DiskGB,
+		DiskUsageGB:    math.Round(diskUsedGB*10) / 10,
+		DiskUsagePct:   diskPct,
+		NetInBytes:     netIn,
+		NetOutBytes:    netOut,
+		DiskReadBytes:  netIn / 2,
+		DiskWriteBytes: netOut / 2,
+		UptimeSeconds:  uptime,
+	}, nil
 }
 
 func (s *SimulatorDriver) StartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {

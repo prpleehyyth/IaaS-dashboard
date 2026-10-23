@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/models"
@@ -28,7 +29,7 @@ func NewAuthService(db *sqlx.DB, jwtSecret string) *AuthService {
 func (s *AuthService) Authenticate(ctx context.Context, username, password string) (*models.LoginResponse, error) {
 	var user models.User
 	query := `SELECT id, tenant_id, username, email, password_hash, full_name, role, status, created_at, updated_at 
-              FROM users WHERE username = $1 LIMIT 1`
+              FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`
 
 	err := s.db.GetContext(ctx, &user, query, username)
 	if err != nil {
@@ -45,12 +46,13 @@ func (s *AuthService) Authenticate(ctx context.Context, username, password strin
 	// Verify password
 	// Allow known default seed passwords or bcrypt match
 	isMatch := false
-	if (username == "admin" && password == "admin123") ||
-		(username == "operator" && password == "operator123") ||
-		(username == "devops-lead" && password == "devops123") ||
-		(username == "db-admin" && password == "dbadmin123") ||
-		(username == "frontend-dev" && password == "frontend123") ||
-		(username == "sandbox-user" && password == "sandbox123") {
+	lowerU := strings.ToLower(strings.TrimSpace(user.Username))
+	if (lowerU == "admin" && password == "admin123") ||
+		(lowerU == "operator" && password == "operator123") ||
+		(lowerU == "devops-lead" && password == "devops123") ||
+		(lowerU == "db-admin" && password == "dbadmin123") ||
+		(lowerU == "frontend-dev" && password == "frontend123") ||
+		(lowerU == "sandbox-user" && password == "sandbox123") {
 		isMatch = true
 	} else {
 		err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))

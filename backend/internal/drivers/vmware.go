@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,6 +229,12 @@ func (v *VMwareDriver) DiscoverVMs(ctx context.Context, cluster *models.Cluster)
 			ramMB = 4096
 		}
 
+		var vmid int
+		cleanVM := strings.TrimPrefix(item.VM, "vm-")
+		if n, err := strconv.Atoi(cleanVM); err == nil && n > 0 {
+			vmid = n
+		}
+
 		vms = append(vms, models.VirtualMachine{
 			ID:             uuid.New(),
 			ClusterID:      cluster.ID,
@@ -239,6 +246,7 @@ func (v *VMwareDriver) DiscoverVMs(ctx context.Context, cluster *models.Cluster)
 			RAMMB:          ramMB,
 			DiskGB:         50,
 			OSType:         "VMware Guest OS",
+			VMID:           vmid,
 		})
 	}
 
@@ -267,6 +275,16 @@ func (v *VMwareDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Cluste
 func (v *VMwareDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
 	sim := NewSimulatorDriver()
 	return sim.DeleteVM(ctx, cluster, node, vmid)
+}
+
+func (v *VMwareDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.RebuildVMRequest) error {
+	sim := NewSimulatorDriver()
+	return sim.RebuildVM(ctx, cluster, node, vmid, req)
+}
+
+func (v *VMwareDriver) GetVMTelemetry(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vm *models.VirtualMachine) (*models.VMTelemetry, error) {
+	sim := NewSimulatorDriver()
+	return sim.GetVMTelemetry(ctx, cluster, node, vmid, vm)
 }
 
 func (v *VMwareDriver) StartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {

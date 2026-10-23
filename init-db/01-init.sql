@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS resource_metering_samples (
 CREATE INDEX IF NOT EXISTS idx_vm_tenant ON virtual_machines(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_vm_cluster ON virtual_machines(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_vm_node ON virtual_machines(node_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_vm_cluster_vmid ON virtual_machines(cluster_id, vmid) WHERE vmid > 0;
 CREATE INDEX IF NOT EXISTS idx_activity_tenant ON vm_activity_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_metering_tenant_time ON resource_metering_samples(tenant_id, recorded_at);
 

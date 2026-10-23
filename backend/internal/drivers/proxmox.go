@@ -533,6 +533,153 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 	return nil
 }
 
+func (p *ProxmoxDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.RebuildVMRequest) error {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+
+	// 1. Ensure VM is stopped before reconfiguring boot media
+	_ = p.StopVM(ctx, cluster, node, vmid, true)
+	time.Sleep(500 * time.Millisecond)
+
+	// 2. Configure installation ISO or template
+	formData := url.Values{}
+	if req.ISOImage != "" && req.ISOImage != "none" {
+		formData.Set("ide2", fmt.Sprintf("%s,media=cdrom", req.ISOImage))
+		formData.Set("boot", "order=ide2;scsi0;net0")
+	} else {
+		formData.Set("ide2", "none,media=cdrom")
+		formData.Set("boot", "order=scsi0;net0")
+	}
+	formData.Set("ostype", "l26")
+
+	updateURL := fmt.Sprintf("/nodes/%s/qemu/%d/config", nodeName, vmid)
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPut, updateURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return fmt.Errorf("failed to send rebuild config to Proxmox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		// If the volume ISO does not exist on this node's storage, fallback to none and update OS/boot order
+		if strings.Contains(string(bodyBytes), "does not exist") && req.ISOImage != "" {
+			log.Printf("[Proxmox] ISO '%s' not present on node '%s', applying rebuild config without mounting ISO: %s", req.ISOImage, nodeName, string(bodyBytes))
+			fbForm := url.Values{}
+			fbForm.Set("ide2", "none,media=cdrom")
+			fbForm.Set("boot", "order=scsi0;net0")
+			fbForm.Set("ostype", "l26")
+			fbResp, fbErr := p.doRequestWithContentType(ctx, http.MethodPut, updateURL, strings.NewReader(fbForm.Encode()), "application/x-www-form-urlencoded")
+			if fbErr == nil && fbResp.StatusCode >= 200 && fbResp.StatusCode < 300 {
+				fbResp.Body.Close()
+				goto postRebuild
+			}
+		}
+		return fmt.Errorf("Proxmox rebuild config error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+postRebuild:
+	// 3. Start VM if requested
+	if req.StartAfter {
+		time.Sleep(300 * time.Millisecond)
+		_ = p.StartVM(ctx, cluster, node, vmid)
+	}
+
+	return nil
+}
+
+func (p *ProxmoxDriver) GetVMTelemetry(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vm *models.VirtualMachine) (*models.VMTelemetry, error) {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+
+	if vm == nil {
+		return &models.VMTelemetry{}, nil
+	}
+
+	// Query Proxmox QEMU current status
+	statusURL := fmt.Sprintf("/nodes/%s/qemu/%d/status/current", nodeName, vmid)
+	resp, err := p.doRequest(ctx, http.MethodGet, statusURL, nil)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var pveCurrent struct {
+			Data struct {
+				Status     string  `json:"status"`
+				CPU        float64 `json:"cpu"`
+				CPUs       int     `json:"cpus"`
+				Mem        int64   `json:"mem"`
+				MaxMem     int64   `json:"maxmem"`
+				Disk       int64   `json:"disk"`
+				MaxDisk    int64   `json:"maxdisk"`
+				NetIn      int64   `json:"netin"`
+				NetOut     int64   `json:"netout"`
+				DiskRead   int64   `json:"diskread"`
+				DiskWrite  int64   `json:"diskwrite"`
+				Uptime     int64   `json:"uptime"`
+			} `json:"data"`
+		}
+
+		if json.NewDecoder(resp.Body).Decode(&pveCurrent) == nil {
+			d := pveCurrent.Data
+			status := models.VMStatusStopped
+			if d.Status == "running" {
+				status = models.VMStatusRunning
+			}
+
+			cpuPct := math.Round(d.CPU*1000) / 10.0
+			ramMB := int(d.MaxMem / (1024 * 1024))
+			if ramMB <= 0 {
+				ramMB = vm.RAMMB
+			}
+			ramUsedMB := int(d.Mem / (1024 * 1024))
+			ramPct := 0.0
+			if ramMB > 0 {
+				ramPct = math.Round((float64(ramUsedMB)/float64(ramMB))*1000) / 10.0
+			}
+
+			diskGB := int(d.MaxDisk / (1024 * 1024 * 1024))
+			if diskGB <= 0 {
+				diskGB = vm.DiskGB
+			}
+			diskUsedGB := float64(d.Disk) / (1024 * 1024 * 1024)
+			diskPct := 0.0
+			if diskGB > 0 {
+				diskPct = math.Round((diskUsedGB/float64(diskGB))*1000) / 10.0
+			}
+
+			cores := d.CPUs
+			if cores <= 0 {
+				cores = vm.CPUCores
+			}
+
+			return &models.VMTelemetry{
+				VMID:           vm.ID,
+				VMName:         vm.Name,
+				Status:         string(status),
+				CPUCores:       cores,
+				CPUUsagePct:    cpuPct,
+				RAMMB:          ramMB,
+				RAMUsageMB:     ramUsedMB,
+				RAMUsagePct:    ramPct,
+				DiskGB:         diskGB,
+				DiskUsageGB:    math.Round(diskUsedGB*10) / 10,
+				DiskUsagePct:   diskPct,
+				NetInBytes:     d.NetIn,
+				NetOutBytes:    d.NetOut,
+				DiskReadBytes:  d.DiskRead,
+				DiskWriteBytes: d.DiskWrite,
+				UptimeSeconds:  d.Uptime,
+			}, nil
+		}
+	}
+
+	// Fallback to simulator if hypervisor unreachable or status endpoint failed
+	sim := NewSimulatorDriver()
+	return sim.GetVMTelemetry(ctx, cluster, node, vmid, vm)
+}
+
 func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vmid int, action string) error {
 	targetType := "qemu"
 

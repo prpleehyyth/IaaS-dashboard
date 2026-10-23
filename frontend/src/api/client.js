@@ -177,6 +177,21 @@ class ApiClient {
     });
   }
 
+  async rebuildVM(id, payload) {
+    return this.request(`/vms/${id}/rebuild`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getVMTelemetry(id) {
+    return this.request(`/vms/${id}/telemetry`);
+  }
+
+  async getFleetTelemetry() {
+    return this.request('/vms/telemetry');
+  }
+
   async requestConsoleSession(id) {
     return this.request(`/vms/${id}/console`, {
       method: 'POST',

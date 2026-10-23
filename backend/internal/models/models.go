@@ -226,6 +226,31 @@ type UpdateVMRequest struct {
 	DiskGB   int    `json:"disk_gb" binding:"omitempty,min=10"`
 }
 
+type RebuildVMRequest struct {
+	OSType     string `json:"os_type" binding:"required"`
+	ISOImage   string `json:"iso_image"`
+	StartAfter bool   `json:"start_after"`
+}
+
+type VMTelemetry struct {
+	VMID           uuid.UUID `json:"vm_id"`
+	VMName         string    `json:"vm_name"`
+	Status         string    `json:"status"`
+	CPUCores       int       `json:"cpu_cores"`
+	CPUUsagePct    float64   `json:"cpu_usage_pct"`
+	RAMMB          int       `json:"ram_mb"`
+	RAMUsageMB     int       `json:"ram_usage_mb"`
+	RAMUsagePct    float64   `json:"ram_usage_pct"`
+	DiskGB         int       `json:"disk_gb"`
+	DiskUsageGB    float64   `json:"disk_usage_gb"`
+	DiskUsagePct   float64   `json:"disk_usage_pct"`
+	NetInBytes     int64     `json:"net_in_bytes"`
+	NetOutBytes    int64     `json:"net_out_bytes"`
+	DiskReadBytes  int64     `json:"disk_read_bytes"`
+	DiskWriteBytes int64     `json:"disk_write_bytes"`
+	UptimeSeconds  int64     `json:"uptime_seconds"`
+}
+
 type CreateClusterRequest struct {
 	ID             string         `json:"id"`
 	Name           string         `json:"name" binding:"required"`

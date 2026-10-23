@@ -99,8 +99,11 @@ func main() {
 
 		// Virtual Machines (Admin & Operator)
 		api.GET("/vms", vmHandler.ListVMs)
+		api.GET("/vms/telemetry", vmHandler.GetFleetTelemetry)
 		api.GET("/vms/:id", vmHandler.GetVM)
+		api.GET("/vms/:id/telemetry", vmHandler.GetVMTelemetry)
 		api.POST("/vms/:id/action", vmHandler.ExecutePowerAction) // Start, Stop, Restart
+		api.POST("/vms/:id/rebuild", vmHandler.RebuildVM)         // OS Reinstallation (Rebuild)
 		api.POST("/vms/:id/console", consoleHandler.RequestConsoleSession)
 
 		// Telemetry & Metering (Pre-wired for billing)

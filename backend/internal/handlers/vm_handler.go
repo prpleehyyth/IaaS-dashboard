@@ -152,3 +152,65 @@ func (h *VMHandler) ExecutePowerAction(c *gin.Context) {
 
 	c.JSON(http.StatusOK, vm)
 }
+
+func (h *VMHandler) RebuildVM(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	var req models.RebuildVMRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rebuild request: " + err.Error()})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	vm, err := h.vmService.RebuildVM(c.Request.Context(), vmID, userID, tenantID, role, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) GetVMTelemetry(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	tel, err := h.vmService.GetVMTelemetry(c.Request.Context(), vmID, userID, tenantID, role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, tel)
+}
+
+func (h *VMHandler) GetFleetTelemetry(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	telemetryList, err := h.vmService.ListFleetTelemetry(c.Request.Context(), tenantID, userID, role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, telemetryList)
+}
