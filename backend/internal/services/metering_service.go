@@ -84,7 +84,7 @@ func (s *MeteringService) UpdateBillingRates(ctx context.Context, req models.Upd
 	return &rates, nil
 }
 
-func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.UUID, role string) (*models.UserBillingReport, error) {
+func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.UUID, role models.UserRole) (*models.UserBillingReport, error) {
 	rates, err := s.GetBillingRates(ctx)
 	if err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 	return &models.UserBillingReport{
 		UserID:        userID,
 		Username:      username,
-		Role:          role,
+		Role:          string(role),
 		TotalVMs:      len(items),
 		TotalCPUCores: totalCores,
 		TotalRAMGB:    totalRAMGB,
