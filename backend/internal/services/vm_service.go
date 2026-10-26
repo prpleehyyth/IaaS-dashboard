@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/database"
@@ -52,45 +53,26 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
                  ORDER BY v.created_at DESC`
 		err = s.db.SelectContext(ctx, &vms, query)
 	} else {
-		// Operator sees assigned VMs if any assignment exists, otherwise all VMs in their organization/tenant
-		var assignmentCount int
-		_ = s.db.GetContext(ctx, &assignmentCount, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1`, userID)
-
-		if assignmentCount > 0 {
-			query = `SELECT DISTINCT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
-			                v.cpu_cores, v.ram_mb, v.disk_gb,
-			                COALESCE(v.ip_address, '') as ip_address,
-			                COALESCE(v.mac_address, '') as mac_address,
-			                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
-			                COALESCE(v.console_port, 0) as console_port,
-			                COALESCE(v.vmid, 0) as vmid,
-			                v.created_by, v.created_at, v.updated_at,
-			                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
-	                 FROM virtual_machines v
-	                 INNER JOIN user_vm_assignments a ON v.id = a.vm_id
-	                 LEFT JOIN clusters c ON v.cluster_id = c.id
-	                 LEFT JOIN nodes n ON v.node_id = n.id
-	                 LEFT JOIN tenants t ON v.tenant_id = t.id
-	                 WHERE a.user_id = $1
-	                 ORDER BY v.created_at DESC`
-			err = s.db.SelectContext(ctx, &vms, query, userID)
-		} else {
-			query = `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
-			                v.cpu_cores, v.ram_mb, v.disk_gb,
-			                COALESCE(v.ip_address, '') as ip_address,
-			                COALESCE(v.mac_address, '') as mac_address,
-			                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
-			                COALESCE(v.console_port, 0) as console_port,
-			                COALESCE(v.vmid, 0) as vmid,
-			                v.created_by, v.created_at, v.updated_at,
-			                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
-	                 FROM virtual_machines v
-	                 LEFT JOIN clusters c ON v.cluster_id = c.id
-	                 LEFT JOIN nodes n ON v.node_id = n.id
-	                 LEFT JOIN tenants t ON v.tenant_id = t.id
-	                 WHERE v.tenant_id = $1
-	                 ORDER BY v.created_at DESC`
-			err = s.db.SelectContext(ctx, &vms, query, tenantID)
+		// Operator sees ONLY assigned VMs. If no VM is assigned, returns empty list.
+		query = `SELECT DISTINCT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+		                v.cpu_cores, v.ram_mb, v.disk_gb,
+		                COALESCE(v.ip_address, '') as ip_address,
+		                COALESCE(v.mac_address, '') as mac_address,
+		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.console_port, 0) as console_port,
+		                COALESCE(v.vmid, 0) as vmid,
+		                v.created_by, v.created_at, v.updated_at,
+		                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
+                 FROM virtual_machines v
+                 INNER JOIN user_vm_assignments a ON v.id = a.vm_id
+                 LEFT JOIN clusters c ON v.cluster_id = c.id
+                 LEFT JOIN nodes n ON v.node_id = n.id
+                 LEFT JOIN tenants t ON v.tenant_id = t.id
+                 WHERE a.user_id = $1
+                 ORDER BY v.created_at DESC`
+		err = s.db.SelectContext(ctx, &vms, query, userID)
+		if vms == nil {
+			vms = []models.VirtualMachine{}
 		}
 	}
 
@@ -560,5 +542,89 @@ func (s *VMService) ListFleetTelemetry(ctx context.Context, tenantID, userID uui
 	}
 
 	return telemetryList, nil
+}
+
+func (s *VMService) GetAuditLogs(ctx context.Context, userID uuid.UUID, role models.UserRole, page, limit int, search, action, status string, exportAll bool) (*models.AuditLogsResponse, error) {
+	if exportAll {
+		limit = 2000
+		page = 1
+	} else {
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 {
+			limit = 10
+		}
+		if limit > 200 {
+			limit = 200
+		}
+	}
+	offset := (page - 1) * limit
+
+	baseFrom := `FROM vm_activity_logs l
+                 LEFT JOIN users u ON l.user_id = u.id
+                 LEFT JOIN virtual_machines v ON l.vm_id = v.id`
+
+	whereClauses := []string{"1=1"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if role != models.RoleAdmin {
+		whereClauses = append(whereClauses, fmt.Sprintf("(l.user_id = $%d OR l.vm_id IN (SELECT vm_id FROM user_vm_assignments WHERE user_id = $%d))", argIdx, argIdx))
+		args = append(args, userID)
+		argIdx++
+	}
+
+	if search != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(l.details ILIKE $%d OR COALESCE(v.name, '') ILIKE $%d OR COALESCE(u.username, '') ILIKE $%d)", argIdx, argIdx, argIdx))
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	if action != "" && action != "ALL" {
+		whereClauses = append(whereClauses, fmt.Sprintf("l.action = $%d", argIdx))
+		args = append(args, action)
+		argIdx++
+	}
+
+	if status != "" && status != "ALL" {
+		whereClauses = append(whereClauses, fmt.Sprintf("l.status = $%d", argIdx))
+		args = append(args, status)
+		argIdx++
+	}
+
+	whereSQL := strings.Join(whereClauses, " AND ")
+
+	var total int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) %s WHERE %s", baseFrom, whereSQL)
+	if err := s.db.GetContext(ctx, &total, countQuery, args...); err != nil {
+		return nil, err
+	}
+
+	query := fmt.Sprintf(`SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+                                 COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+                          %s
+                          WHERE %s
+                          ORDER BY l.created_at DESC
+                          LIMIT $%d OFFSET $%d`, baseFrom, whereSQL, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	logs := []models.VMActivityLog{}
+	if err := s.db.SelectContext(ctx, &logs, query, args...); err != nil {
+		return nil, err
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &models.AuditLogsResponse{
+		Logs:       logs,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		TotalPages: totalPages,
+	}, nil
 }
 

@@ -148,6 +148,10 @@ func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 					currentLine = currentLine[:len(currentLine)-1]
 					ws.WriteMessage(websocket.TextMessage, []byte("\b \b"))
 				}
+			} else if ch == 12 { // Ctrl+L (Clear screen)
+				ws.WriteMessage(websocket.TextMessage, []byte("\x1b[2J\x1b[H"))
+				prompt := fmt.Sprintf("\x1b[1;32mroot@%s\x1b[0m:\x1b[1;34m~#\x1b[0m %s", vm.Name, currentLine)
+				ws.WriteMessage(websocket.TextMessage, []byte(prompt))
 			} else if ch == 3 { // Ctrl+C
 				currentLine = ""
 				ws.WriteMessage(websocket.TextMessage, []byte("^C\r\n"))

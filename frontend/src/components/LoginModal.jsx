@@ -102,7 +102,7 @@ export default function LoginModal({ onLoginSuccess }) {
             textAlign: 'center',
             fontWeight: 600
           }}>
-            Maritime Access Presets
+            Akses Cepat Login (Demo)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <button 
@@ -121,9 +121,9 @@ export default function LoginModal({ onLoginSuccess }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#1e3a8a', fontWeight: 700 }}>
                 <ShieldCheck size={16} />
-                <span>Admiralty Admin</span>
+                <span>Administrator</span>
               </div>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Full Fleet Control</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Akses Sistem Penuh</span>
             </button>
 
             <button 
@@ -144,14 +144,14 @@ export default function LoginModal({ onLoginSuccess }) {
                 <UserCheck size={16} />
                 <span>VM Operator</span>
               </div>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Power / Web Console</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>VM Ditugaskan & Konsol</span>
             </button>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '22px' }}>
           <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }}></div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontWeight: 600 }}>OR OFFICER CREDENTIALS</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontWeight: 600 }}>ATAU MASUK DENGAN KREDENSIAL</span>
           <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }}></div>
         </div>
 

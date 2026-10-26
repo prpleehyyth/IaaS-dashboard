@@ -282,7 +282,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
       {/* Header and Filter */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '26px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: '1.85rem', fontWeight: 800 }}>Maritime Cluster Fleet & Compute Nodes</h1>
+          <h1 style={{ fontSize: '1.85rem', fontWeight: 800 }}>Clusters & Compute Nodes</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
             Controlling {clusters.length} Cluster{clusters.length !== 1 ? 's' : ''} • {totalNodesCount} Bare-Metal Compute Node{totalNodesCount !== 1 ? 's' : ''} ({vmwareCount} VMware + {proxmoxCount} Proxmox)
           </p>
@@ -437,14 +437,14 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontWeight: 600 }}>CLUSTER FLEET</div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontWeight: 600 }}>STATUS CLUSTER</div>
                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>{nodes.length} Physical Node{nodes.length !== 1 ? 's' : ''}</div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: nodes.length > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(100, 116, 139, 0.08)', padding: '6px 14px', borderRadius: '9999px', border: nodes.length > 0 ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(100, 116, 139, 0.25)' }}>
                       <span className={`status-dot ${nodes.length > 0 ? 'online' : 'stopped'}`}></span>
                       <span style={{ fontSize: '0.78rem', color: nodes.length > 0 ? '#059669' : 'var(--text-muted)', fontWeight: 700 }}>
-                        {nodes.length > 0 ? 'Fleet Ready' : 'Awaiting Nodes'}
+                        {nodes.length > 0 ? 'Cluster Ready' : 'Awaiting Nodes'}
                       </span>
                     </div>
 
@@ -458,7 +458,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                           style={{ padding: '6px 12px' }}
                         >
                           <RefreshCw size={13} className={syncingClusterId === cluster.id ? 'spin' : ''} />
-                          <span>{syncingClusterId === cluster.id ? 'Syncing...' : 'Sync Fleet'}</span>
+                          <span>{syncingClusterId === cluster.id ? 'Syncing...' : 'Sync Cluster'}</span>
                         </button>
 
                         <button
@@ -494,7 +494,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                     <Server size={30} color="var(--text-dim)" style={{ margin: '0 auto 8px auto' }} />
                     <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>No Physical Nodes Registered</div>
                     <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '520px', margin: '4px auto 16px auto', lineHeight: 1.5 }}>
-                      Click <strong>Sync Fleet Now</strong> to query the hypervisor endpoint (<code style={{ fontSize: '0.78rem' }}>{cluster.endpoint}</code>) and automatically discover all compute hosts and VMs, or add bare-metal nodes manually.
+                      Click <strong>Sync Cluster</strong> to query the hypervisor endpoint (<code style={{ fontSize: '0.78rem' }}>{cluster.endpoint}</code>) and automatically discover all compute hosts and VMs, or add bare-metal nodes manually.
                     </p>
                     {isAdmin && (
                       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
@@ -505,7 +505,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                           style={{ padding: '7px 16px' }}
                         >
                           <RefreshCw size={13} className={syncingClusterId === cluster.id ? 'spin' : ''} />
-                          <span>{syncingClusterId === cluster.id ? 'Discovering...' : 'Sync Fleet Now'}</span>
+                          <span>{syncingClusterId === cluster.id ? 'Discovering...' : 'Sync Cluster'}</span>
                         </button>
                         <button
                           className="btn btn-secondary btn-sm"
@@ -864,7 +864,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                         Auto-Discover Compute Nodes & Existing VMs on Connect
                       </span>
                       <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                        Queries the hypervisor immediately to populate physical nodes, CPU/RAM capacity, and active VMs into the fleet.
+                        Memindai hypervisor langsung untuk memperbarui node fisik, kapasitas CPU/RAM, dan status VM ke sistem.
                       </span>
                     </div>
                   </label>

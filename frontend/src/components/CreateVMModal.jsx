@@ -19,6 +19,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   const [isoList, setIsoList] = useState([]);
   const [selectedIso, setSelectedIso] = useState('');
   const [isLoadingIsos, setIsLoadingIsos] = useState(false);
+  const [filterByOS, setFilterByOS] = useState(true);
   const [cpuCores, setCpuCores] = useState(4);
   const [ramGB, setRamGB] = useState(8);
   const [diskGB, setDiskGB] = useState(50);
@@ -27,6 +28,31 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
   const selectedCluster = clusters.find(c => c.id === selectedClusterId);
   const availableNodes = selectedCluster?.nodes || [];
+
+  // Filter ISO installer according to selected OS (e.g. Ubuntu -> only Ubuntu ISOs)
+  const filteredIsoList = React.useMemo(() => {
+    if (!isoList || isoList.length === 0) return [];
+    if (!filterByOS) return isoList;
+
+    const osLower = (osType || '').toLowerCase();
+    let keyword = '';
+    if (osLower.includes('ubuntu')) keyword = 'ubuntu';
+    else if (osLower.includes('debian')) keyword = 'debian';
+    else if (osLower.includes('alpine')) keyword = 'alpine';
+    else if (osLower.includes('rocky')) keyword = 'rocky';
+    else if (osLower.includes('arch')) keyword = 'arch';
+    else if (osLower.includes('win')) keyword = 'win';
+
+    if (!keyword) return isoList;
+
+    const matched = isoList.filter((iso) => {
+      const name = (iso.filename || '').toLowerCase();
+      const vol = (iso.volid || '').toLowerCase();
+      return name.includes(keyword) || vol.includes(keyword);
+    });
+
+    return matched;
+  }, [isoList, osType, filterByOS]);
 
   const fetchISOs = async (clusterId, nodeId) => {
     if (!clusterId) {
@@ -38,14 +64,6 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
     try {
       const isos = await api.getClusterISOs(clusterId, nodeId);
       setIsoList(isos || []);
-      if (isos && isos.length > 0) {
-        setSelectedIso(prev => {
-          if (prev && isos.some(i => i.volid === prev)) return prev;
-          return isos[0].volid;
-        });
-      } else {
-        setSelectedIso('');
-      }
     } catch (err) {
       console.warn('Failed to load ISO images:', err);
       setIsoList([]);
@@ -57,6 +75,17 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   useEffect(() => {
     fetchISOs(selectedClusterId, selectedNodeId);
   }, [selectedClusterId, selectedNodeId]);
+
+  // Auto-select matching ISO when filtered list updates or OS changes
+  useEffect(() => {
+    if (filteredIsoList.length > 0) {
+      if (!selectedIso || !filteredIsoList.some(i => i.volid === selectedIso)) {
+        setSelectedIso(filteredIsoList[0].volid);
+      }
+    } else if (filterByOS && isoList.length > 0) {
+      setSelectedIso('');
+    }
+  }, [filteredIsoList, filterByOS]);
 
   const handleClusterChange = (newClusterId) => {
     setSelectedClusterId(newClusterId);
@@ -192,7 +221,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
 
             {selectedCluster && availableNodes.length === 0 && (
               <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: '8px', color: '#92400e', fontSize: '0.8rem', marginBottom: '14px' }}>
-                Cluster <strong>{selectedCluster.name}</strong> has no registered compute nodes. Go to the <strong>Clusters</strong> tab and click <strong>Sync Fleet</strong> or add a node manually before deploying.
+                Cluster <strong>{selectedCluster.name}</strong> belum memiliki node compute terdaftar. Buka tab <strong>Clusters</strong> dan klik <strong>Sync Cluster</strong> atau tambah node secara manual.
               </div>
             )}
 
@@ -246,26 +275,46 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                 disabled={isLoadingIsos}
               >
                 <option value="">None (Blank Virtual Disk / Network Boot)</option>
-                {isoList.map((iso) => (
+                {filteredIsoList.map((iso) => (
                   <option key={iso.volid} value={iso.volid}>
                     {iso.filename} ({iso.storage} • {iso.size_gb} GB)
                   </option>
                 ))}
               </select>
 
-              {selectedIso ? (
-                <div style={{ fontSize: '0.75rem', color: '#059669', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span>✓ ISO will be mounted to virtual CD-ROM (ide2) with first boot priority.</span>
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '5px' }}>
-                  {isoList.length === 0 && !isLoadingIsos ? (
-                    <span>No ISOs discovered in storage. You can upload an ISO to Proxmox 'local' storage or boot an existing disk.</span>
-                  ) : (
-                    <span>VM will provision with an unformatted disk without an installer attached.</span>
-                  )}
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                {selectedIso ? (
+                  <div style={{ fontSize: '0.75rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>✓ ISO {filterByOS ? `khusus ${osType.split(' ')[0]}` : ''} akan dipasang ke virtual CD-ROM (ide2) dengan prioritas boot utama.</span>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {filteredIsoList.length === 0 && !isLoadingIsos ? (
+                      <span>Tidak ditemukan ISO khusus {osType.split(' ')[0]}.</span>
+                    ) : (
+                      <span>VM akan diprovision dengan disk kosong tanpa media installer.</span>
+                    )}
+                  </div>
+                )}
+
+                {isoList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterByOS(!filterByOS)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#1e3a8a',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType.split(' ')[0]} (${filteredIsoList.length})`}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Hardware Specs Range Sliders */}

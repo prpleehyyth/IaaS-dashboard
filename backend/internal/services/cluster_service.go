@@ -448,15 +448,7 @@ func (s *ClusterService) ResetToVirgin(ctx context.Context) error {
 	return tx.Commit()
 }
 
-func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.DashboardSummaryResponse, error) {
-	clusters, err := s.GetAllClustersWithNodes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var totalVMs, runningVMs, stoppedVMs int
-	var allocCPU, allocRAM, allocDisk int
-
+func (s *ClusterService) GetDashboardSummary(ctx context.Context, userID uuid.UUID, role models.UserRole) (*models.DashboardSummaryResponse, error) {
 	type vmCounts struct {
 		Total   int `db:"total"`
 		Running int `db:"running"`
@@ -467,44 +459,73 @@ func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.Dashb
 	}
 
 	var vmc vmCounts
-	query := `SELECT 
-                COUNT(*) as total,
-                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running,
-                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped,
-                COALESCE(SUM(cpu_cores), 0) as cpu,
-                COALESCE(SUM(ram_mb), 0) as ram,
-                COALESCE(SUM(disk_gb), 0) as disk
-              FROM virtual_machines`
-
-	_ = s.db.GetContext(ctx, &vmc, query)
-
-	totalVMs = vmc.Total
-	runningVMs = vmc.Running
-	stoppedVMs = vmc.Stopped
-	allocCPU = vmc.CPU
-	allocRAM = vmc.RAM / 1024
-	allocDisk = vmc.Disk
-
-	// Compute cluster totals
+	var clusters []models.Cluster
 	var totalNodes, totalCPU, totalRAM int
 	var totalStorage float64
+	recentLogs := []models.VMActivityLog{}
 
-	for _, c := range clusters {
-		totalNodes += len(c.Nodes)
-		totalCPU += c.TotalCPUCores
-		totalRAM += c.TotalRAMGB
-		totalStorage += c.TotalStorageTB
+	if role == models.RoleAdmin {
+		allClusters, err := s.GetAllClustersWithNodes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		clusters = allClusters
+
+		query := `SELECT 
+	                COUNT(*) as total,
+	                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running,
+	                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped,
+	                COALESCE(SUM(cpu_cores), 0) as cpu,
+	                COALESCE(SUM(ram_mb), 0) as ram,
+	                COALESCE(SUM(disk_gb), 0) as disk
+	              FROM virtual_machines`
+		_ = s.db.GetContext(ctx, &vmc, query)
+
+		for _, c := range clusters {
+			totalNodes += len(c.Nodes)
+			totalCPU += c.TotalCPUCores
+			totalRAM += c.TotalRAMGB
+			totalStorage += c.TotalStorageTB
+		}
+
+		logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+	                        COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+	                 FROM vm_activity_logs l
+	                 LEFT JOIN users u ON l.user_id = u.id
+	                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
+	                 ORDER BY l.created_at DESC LIMIT 10`
+		_ = s.db.SelectContext(ctx, &recentLogs, logQuery)
+	} else {
+		// Operator role: hide host clusters and physical nodes, only calculate metrics for assigned VMs
+		clusters = []models.Cluster{}
+		query := `SELECT 
+	                COUNT(*) as total,
+	                COUNT(CASE WHEN v.status = 'RUNNING' THEN 1 END) as running,
+	                COUNT(CASE WHEN v.status = 'STOPPED' THEN 1 END) as stopped,
+	                COALESCE(SUM(v.cpu_cores), 0) as cpu,
+	                COALESCE(SUM(v.ram_mb), 0) as ram,
+	                COALESCE(SUM(v.disk_gb), 0) as disk
+	              FROM virtual_machines v
+	              INNER JOIN user_vm_assignments a ON v.id = a.vm_id
+	              WHERE a.user_id = $1`
+		_ = s.db.GetContext(ctx, &vmc, query, userID)
+
+		logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+	                        COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+	                 FROM vm_activity_logs l
+	                 LEFT JOIN users u ON l.user_id = u.id
+	                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
+	                 WHERE l.user_id = $1 OR l.vm_id IN (SELECT vm_id FROM user_vm_assignments WHERE user_id = $1)
+	                 ORDER BY l.created_at DESC LIMIT 10`
+		_ = s.db.SelectContext(ctx, &recentLogs, logQuery, userID)
 	}
 
-	// Fetch recent 10 activity logs
-	recentLogs := []models.VMActivityLog{}
-	logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
-                        u.username, COALESCE(v.name, 'N/A') as vm_name
-                 FROM vm_activity_logs l
-                 LEFT JOIN users u ON l.user_id = u.id
-                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
-                 ORDER BY l.created_at DESC LIMIT 10`
-	_ = s.db.SelectContext(ctx, &recentLogs, logQuery)
+	totalVMs := vmc.Total
+	runningVMs := vmc.Running
+	stoppedVMs := vmc.Stopped
+	allocCPU := vmc.CPU
+	allocRAM := vmc.RAM / 1024
+	allocDisk := vmc.Disk
 
 	return &models.DashboardSummaryResponse{
 		TotalClusters:   len(clusters),

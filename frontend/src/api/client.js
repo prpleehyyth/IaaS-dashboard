@@ -285,6 +285,19 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Audit Logs Endpoint (Pagination, Filter, Export)
+  async getAuditLogs(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.page) qs.append('page', params.page);
+    if (params.limit !== undefined) qs.append('limit', params.limit);
+    if (params.search) qs.append('search', params.search);
+    if (params.action && params.action !== 'ALL') qs.append('action', params.action);
+    if (params.status && params.status !== 'ALL') qs.append('status', params.status);
+    if (params.export) qs.append('export', 'true');
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request(`/audit-logs${query}`);
+  }
 }
 
 export const api = new ApiClient();

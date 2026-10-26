@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"iaas-dashboard/internal/middleware"
 	"iaas-dashboard/internal/models"
@@ -213,4 +214,24 @@ func (h *VMHandler) GetFleetTelemetry(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, telemetryList)
+}
+
+func (h *VMHandler) GetAuditLogs(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	role := middleware.GetUserRole(c)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	search := c.Query("search")
+	action := c.Query("action")
+	status := c.Query("status")
+	exportAll := c.Query("export") == "true" || c.Query("limit") == "0"
+
+	resp, err := h.vmService.GetAuditLogs(c.Request.Context(), userID, role, page, limit, search, action, status, exportAll)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

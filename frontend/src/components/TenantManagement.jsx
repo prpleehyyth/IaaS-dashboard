@@ -40,9 +40,9 @@ export default function TenantManagement({ tenants, onRefresh }) {
   return (
     <div>
       <div style={{ marginBottom: '26px' }}>
-        <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Maritime Tenant Fleets & Quotas</h1>
+        <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Tenant & Resource Quotas</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-          Enforce multi-tenant resource boundaries, hard limits, and virtual datacenter quotas.
+          Kelola batasan resource multi-tenant, kuota vCPU, RAM, Storage, dan batas maksimal VM.
         </p>
       </div>
 
@@ -105,7 +105,7 @@ export default function TenantManagement({ tenants, onRefresh }) {
                 {/* VM Count */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Vessel Allotment Limit</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Batas Alokasi Virtual Machine</span>
                     <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{tenant.used_vms || 0} / {tenant.max_vms} VMs ({vmsPct}%)</span>
                   </div>
                   <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
@@ -233,7 +233,7 @@ export default function TenantManagement({ tenants, onRefresh }) {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? 'Updating...' : 'Save Fleet Quotas'}
+                  {isSaving ? 'Menyimpan...' : 'Simpan Kuota Resource'}
                 </button>
               </div>
             </form>

@@ -50,14 +50,18 @@ export default function App() {
     }
 
     try {
+      const isAdmin = api.isAdmin();
       const [sumData, clusterData, vmData] = await Promise.all([
         api.getDashboardSummary(),
-        api.getClusters(),
+        isAdmin ? api.getClusters() : Promise.resolve([]),
         api.getVMs(),
       ]);
 
       setSummary(sumData);
-      setClusters(clusterData || []);
+      setClusters(isAdmin ? (clusterData || []) : []);
+      if (!isAdmin && activeTab === 'clusters') {
+        setActiveTab('overview');
+      }
       
       const seenVMs = new Set();
       const uniqueVMs = (vmData || []).filter((vm) => {
@@ -282,7 +286,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'clusters' && (
+        {activeTab === 'clusters' && user?.role === 'ADMIN' && (
           <ClusterTopology 
             clusters={clusters} 
             onRefresh={loadData} 

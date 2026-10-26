@@ -105,6 +105,7 @@ func main() {
 		api.POST("/vms/:id/action", vmHandler.ExecutePowerAction) // Start, Stop, Restart
 		api.POST("/vms/:id/rebuild", vmHandler.RebuildVM)         // OS Reinstallation (Rebuild)
 		api.POST("/vms/:id/console", consoleHandler.RequestConsoleSession)
+		api.GET("/audit-logs", vmHandler.GetAuditLogs)
 
 		// Telemetry & Metering (Pre-wired for billing)
 		api.GET("/metering/summary", meteringHandler.GetMeteringSummary)

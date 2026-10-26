@@ -66,7 +66,7 @@ export default function BillingPreview({ user, onNavigateRates }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {isAdmin ? 'Laporan Billing Armada VM' : 'Billing & Biaya VM Saya'}
+              {isAdmin ? 'Laporan Billing Virtual Machine' : 'Billing & Biaya VM Saya'}
             </h1>
             <span style={{ 
               fontSize: '0.8rem', 
@@ -81,7 +81,7 @@ export default function BillingPreview({ user, onNavigateRates }) {
               gap: '5px'
             }}>
               {isAdmin ? <ShieldCheck size={14} /> : <UserCheck size={14} />}
-              {isAdmin ? 'Armada Keseluruhan' : `User: ${user?.username || 'Operator'}`}
+              {isAdmin ? 'Seluruh Infrastruktur' : `User: ${user?.username || 'Operator'}`}
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
@@ -169,7 +169,7 @@ export default function BillingPreview({ user, onNavigateRates }) {
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-              {isAdmin ? 'Total Armada VM' : 'VM Ditugaskan'}
+              {isAdmin ? 'Total Virtual Machine' : 'VM Ditugaskan'}
             </span>
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1e3a8a' }}>
               <Server size={18} />
@@ -223,7 +223,7 @@ export default function BillingPreview({ user, onNavigateRates }) {
         <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)', border: '1px solid #bfdbfe' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.78rem', color: '#1e3a8a', fontWeight: 800, textTransform: 'uppercase' }}>
-              {isAdmin ? 'Total Biaya Armada' : 'Total Tagihan Saya'}
+              {isAdmin ? 'Total Biaya Keseluruhan' : 'Total Tagihan Saya'}
             </span>
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff' }}>
               <Receipt size={18} />
@@ -259,11 +259,11 @@ export default function BillingPreview({ user, onNavigateRates }) {
           <div style={{ padding: '48px 20px', textAlign: 'center' }}>
             <FileText size={40} color="#94a3b8" style={{ margin: '0 auto 12px auto' }} />
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-              {isAdmin ? 'Belum Ada VM di Armada' : 'Belum Ada VM yang Di-assign ke Anda'}
+              {isAdmin ? 'Belum Ada Virtual Machine' : 'Belum Ada VM yang Di-assign ke Anda'}
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', maxWidth: '440px', margin: '0 auto' }}>
               {isAdmin 
-                ? 'Deploy virtual machine baru melalui menu VM Fleet untuk mulai menghasilkan data billing.'
+                ? 'Deploy virtual machine baru melalui menu Virtual Machines untuk mulai menghasilkan data billing.'
                 : 'Akun Anda belum memiliki virtual machine yang ditugaskan. Silakan hubungi Administrator untuk mendapatkan alokasi VM.'}
             </p>
           </div>

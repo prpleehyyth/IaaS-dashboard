@@ -16,10 +16,36 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
   const [osType, setOsType] = useState(vm?.os_type || 'Ubuntu 22.04 LTS');
   const [isoList, setIsoList] = useState([]);
   const [selectedIso, setSelectedIso] = useState('');
+  const [filterByOS, setFilterByOS] = useState(true);
   const [startAfter, setStartAfter] = useState(true);
   const [isLoadingIsos, setIsLoadingIsos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Filter ISO installer according to selected target OS (e.g. Ubuntu -> only Ubuntu ISOs)
+  const filteredIsoList = React.useMemo(() => {
+    if (!isoList || isoList.length === 0) return [];
+    if (!filterByOS) return isoList;
+
+    const osLower = (osType || '').toLowerCase();
+    let keyword = '';
+    if (osLower.includes('ubuntu')) keyword = 'ubuntu';
+    else if (osLower.includes('debian')) keyword = 'debian';
+    else if (osLower.includes('alpine')) keyword = 'alpine';
+    else if (osLower.includes('rocky')) keyword = 'rocky';
+    else if (osLower.includes('arch')) keyword = 'arch';
+    else if (osLower.includes('win')) keyword = 'win';
+
+    if (!keyword) return isoList;
+
+    const matched = isoList.filter((iso) => {
+      const name = (iso.filename || '').toLowerCase();
+      const vol = (iso.volid || '').toLowerCase();
+      return name.includes(keyword) || vol.includes(keyword);
+    });
+
+    return matched;
+  }, [isoList, osType, filterByOS]);
 
   useEffect(() => {
     if (!vm) return;
@@ -28,9 +54,6 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
       try {
         const isos = await api.getClusterISOs(vm.cluster_id, vm.node_id);
         setIsoList(isos || []);
-        if (isos && isos.length > 0) {
-          setSelectedIso(isos[0].volid);
-        }
       } catch (err) {
         console.warn('Failed to load cluster ISOs:', err);
       } finally {
@@ -39,6 +62,17 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
     };
     loadISOs();
   }, [vm]);
+
+  // Auto-select matching ISO when filtered list updates or target OS changes
+  useEffect(() => {
+    if (filteredIsoList.length > 0) {
+      if (!selectedIso || !filteredIsoList.some(i => i.volid === selectedIso)) {
+        setSelectedIso(filteredIsoList[0].volid);
+      }
+    } else if (filterByOS && isoList.length > 0) {
+      setSelectedIso('');
+    }
+  }, [filteredIsoList, filterByOS]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -176,12 +210,12 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
               onChange={(e) => setSelectedIso(e.target.value)}
               disabled={isSubmitting || isLoadingIsos}
             >
-              {isoList.length === 0 ? (
+              {filteredIsoList.length === 0 ? (
                 <option value="">Gunakan image default cloud / Network installer</option>
               ) : (
                 <>
                   <option value="">Gunakan image default cloud</option>
-                  {isoList.map((iso) => (
+                  {filteredIsoList.map((iso) => (
                     <option key={iso.volid} value={iso.volid}>
                       {iso.filename} ({iso.size_gb} GB - {iso.storage})
                     </option>
@@ -189,8 +223,32 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
                 </>
               )}
             </select>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-              Media instalasi ISO yang terdeteksi di storage cluster node.
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+              <div style={{ fontSize: '0.75rem', color: selectedIso ? '#059669' : 'var(--text-dim)' }}>
+                {selectedIso
+                  ? `✓ Media installer ISO khusus ${osType.split(' ')[0]} siap di-boot.`
+                  : (filteredIsoList.length === 0
+                      ? `Tidak ditemukan ISO khusus ${osType.split(' ')[0]}.`
+                      : 'Media instalasi ISO yang terdeteksi di storage cluster node.')}
+              </div>
+
+              {isoList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterByOS(!filterByOS)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#1e3a8a',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType.split(' ')[0]} (${filteredIsoList.length})`}
+                </button>
+              )}
             </div>
           </div>
 

@@ -168,6 +168,14 @@ type VMActivityLog struct {
 	VMName    string     `json:"vm_name,omitempty" db:"vm_name"`
 }
 
+type AuditLogsResponse struct {
+	Logs       []VMActivityLog `json:"logs"`
+	Total      int             `json:"total"`
+	Page       int             `json:"page"`
+	Limit      int             `json:"limit"`
+	TotalPages int             `json:"total_pages"`
+}
+
 // ResourceMeteringSample Model
 type ResourceMeteringSample struct {
 	ID         int64     `json:"id" db:"id"`

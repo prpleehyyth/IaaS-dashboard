@@ -17,11 +17,13 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
 
   // Navigation tabs for PT PAL Private Cloud Panel
   const tabs = [
-    { id: 'overview', label: 'Overview', title: 'Overview', icon: LayoutDashboard },
-    { id: 'clusters', label: 'Clusters', title: 'Clusters & Compute Nodes', icon: Server },
-    { id: 'vms', label: 'VM Fleet', title: 'Virtual Machines', icon: HardDrive },
+    { id: 'overview', label: 'Overview', title: 'Ringkasan Sistem & VM', icon: LayoutDashboard },
     ...(isAdmin ? [
-      { id: 'users', label: 'Users', title: 'Users & VM Access', icon: Users },
+      { id: 'clusters', label: 'Clusters', title: 'Clusters & Compute Nodes', icon: Server },
+    ] : []),
+    { id: 'vms', label: 'Virtual Machines', title: 'Daftar Virtual Machines', icon: HardDrive },
+    ...(isAdmin ? [
+      { id: 'users', label: 'Users', title: 'Manajemen Pengguna & Akses VM', icon: Users },
       { id: 'billing-rates', label: 'Atur Tarif', title: 'Atur Tarif CPU, Storage & Network', icon: Sliders },
     ] : []),
     { id: 'billing', label: 'Billing', title: 'Laporan Billing & Biaya VM', icon: Receipt },
@@ -58,7 +60,7 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
 
         {/* User Status & Role Switcher */}
         <div className="nav-actions">
-          <div className="user-badge" title={isAdmin ? 'Full Fleet Access' : 'Delegated Operator'}>
+          <div className="user-badge" title={isAdmin ? 'Akses Administrator Penuh' : 'Operator VM (Akses Terbatas)'}>
             <div className={`user-avatar ${isAdmin ? 'admin' : 'operator'}`}>
               {isAdmin ? <ShieldCheck size={15} /> : <UserCheck size={15} />}
             </div>

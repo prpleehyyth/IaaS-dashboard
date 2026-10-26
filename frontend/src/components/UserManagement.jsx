@@ -108,7 +108,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '26px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Maritime Personnel & Vessel Access</h1>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)' }}>Manajemen Pengguna & Akses VM</h1>
             <span style={{ 
               fontSize: '0.82rem', 
               background: '#eff6ff', 
@@ -122,7 +122,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-            Authorize fleet officers (Admiralty Admin) or delegate vessel command to VM Operators.
+            Kelola akun Administrator dan delegasikan izin kontrol VM kepada VM Operator.
           </p>
         </div>
 
@@ -132,7 +132,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           style={{ padding: '10px 20px' }}
         >
           <UserPlus size={17} strokeWidth={2.4} />
-          <span>Commission New Officer</span>
+          <span>Tambah Pengguna Baru</span>
         </button>
       </div>
 
@@ -141,12 +141,12 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
         <table>
           <thead>
             <tr>
-              <th>Personnel</th>
-              <th>Rank & Role</th>
-              <th>Division / Organization</th>
-              <th>Authorized Vessels (VMs)</th>
+              <th>Nama & Username</th>
+              <th>Role</th>
+              <th>Organisasi / Tenant</th>
+              <th>Akses Virtual Machine (VM)</th>
               <th>Status</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th style={{ textAlign: 'right' }}>Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -187,14 +187,14 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                   {/* Tenant */}
                   <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    {u.tenant_name || 'Fleet Core Command'}
+                    {u.tenant_name || 'Organisasi Utama'}
                   </td>
 
                   {/* Accessible VMs */}
                   <td>
                     {isAdmin ? (
                       <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
-                        All Fleet Vessels (12 VMs across 4 Clusters)
+                        Semua Virtual Machine (Akses Penuh)
                       </span>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -207,7 +207,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                           padding: '3px 10px',
                           borderRadius: '6px'
                         }}>
-                          {u.assigned_vm_count || 0} Assigned Vessels
+                          {u.assigned_vm_count || 0} VM Ditugaskan
                         </span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
                           (Power & Remote Console)
@@ -230,11 +230,11 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                         <button 
                           className="btn btn-secondary btn-sm"
                           onClick={() => openAssignModal(u)}
-                          title="Assign Accessible Virtual Machines"
+                          title="Tugaskan Virtual Machine ke Operator"
                           style={{ color: 'var(--text-main)' }}
                         >
                           <HardDrive size={13} color="#1e3a8a" />
-                          <span>Assign Vessels</span>
+                          <span>Tugaskan VM</span>
                         </button>
                       )}
 
@@ -262,9 +262,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Commission New Fleet Personnel</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Tambah Pengguna Baru</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Register Admiralty Admin or VM Operator with custom vessel assignments
+                  Daftarkan Administrator atau VM Operator dengan penugasan VM yang dipilih
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setIsCreateModalOpen(false)} style={{ padding: '6px' }}>
@@ -309,11 +309,11 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label className="form-label">Official Email</label>
+                    <label className="form-label">Email</label>
                     <input 
                       type="email" 
                       className="form-input" 
-                      placeholder="turner@fleet.naval"
+                      placeholder="operator@cloud.local"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -336,14 +336,14 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label className="form-label">Commission Rank / Role</label>
+                    <label className="form-label">Role Pengguna</label>
                     <select 
                       className="form-select"
                       value={role}
                       onChange={(e) => setRole(e.target.value)}
                     >
                       <option value="OPERATOR">VM Operator (Power, Console Control)</option>
-                      <option value="ADMIN">Admiralty Administrator (Full Command)</option>
+                      <option value="ADMIN">Administrator (Full Access)</option>
                     </select>
                   </div>
 
@@ -366,7 +366,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   <div style={{ marginTop: '10px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                       <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                        Assign Initial Fleet Vessels ({initialVMs.length} selected):
+                        Penugasan Awal Virtual Machine ({initialVMs.length} dipilih):
                       </span>
                     </div>
 
@@ -426,9 +426,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '620px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Assign Fleet Vessels</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Tugaskan Virtual Machine (VM)</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Assigning access for Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
+                  Memberikan izin kontrol VM untuk Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setAssigningUser(null)} style={{ padding: '6px' }}>
@@ -440,7 +440,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
               {/* Quick Select Buttons */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                  Selected: <strong style={{ color: '#1e3a8a' }}>{selectedVMs.length}</strong> of {vms.length} Vessels
+                  Dipilih: <strong style={{ color: '#1e3a8a' }}>{selectedVMs.length}</strong> dari {vms.length} Virtual Machine
                 </span>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -515,10 +515,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setAssigningUser(null)}>
-                Cancel
+                Batal
               </button>
               <button type="button" className="btn btn-primary" onClick={handleSaveAssignments}>
-                Save Vessel Assignments
+                Simpan Penugasan VM
               </button>
             </div>
           </div>
