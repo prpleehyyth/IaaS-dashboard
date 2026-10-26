@@ -523,7 +523,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                     )}
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '20px' }}>
                     {nodes.map((node) => {
                       const ramPct = node.ram_total_gb > 0 ? Math.round((node.ram_usage_gb / node.ram_total_gb) * 100) : 0;
                       const storagePct = node.storage_total_gb > 0 ? Math.round((node.storage_usage_gb / node.storage_total_gb) * 100) : 0;
@@ -683,7 +683,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                 {/* Hypervisor Platform Selector Cards */}
                 <div>
                   <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>Hypervisor Platform</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '12px' }}>
                     <div 
                       onClick={() => handleTypeChange('PROXMOX')}
                       style={{
@@ -731,7 +731,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                 </div>
 
                 {/* Basic Cluster Metadata */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Cluster Display Name</label>
                     <input 
@@ -756,7 +756,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Datacenter Identifier</label>
                     <input 
@@ -796,7 +796,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                     </span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                     <div className="form-group">
                       <label className="form-label">
                         {clusterType === 'PROXMOX' ? 'API Token ID (or Username)' : 'vCenter Username'}
@@ -985,7 +985,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Node Hostname / FQDN</label>
                     <input 
@@ -1010,7 +1010,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Management IP Address</label>
                     <input 
@@ -1035,7 +1035,7 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
                   <div className="form-group">
                     <label className="form-label">CPU Cores</label>
                     <input 

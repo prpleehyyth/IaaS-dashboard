@@ -46,7 +46,7 @@ export default function TenantManagement({ tenants, onRefresh }) {
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '24px' }}>
         {tenants.map((tenant) => {
           const cpuPct = Math.round((tenant.used_cpu / tenant.max_cpu) * 100);
           const ramPct = Math.round((tenant.used_ram_gb / tenant.max_ram_gb) * 100);
@@ -54,8 +54,8 @@ export default function TenantManagement({ tenants, onRefresh }) {
           const vmsPct = Math.round((tenant.used_vms / tenant.max_vms) * 100);
 
           return (
-            <div key={tenant.id} className="glass-panel" style={{ padding: '26px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+            <div key={tenant.id} className="glass-panel" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{ 
                     width: '44px', 

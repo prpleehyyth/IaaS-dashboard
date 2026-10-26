@@ -281,13 +281,13 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Username</label>
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="e.g. officer-turner"
+                      placeholder="e.g. operator-john"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required
@@ -299,7 +299,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="e.g. John Turner"
+                      placeholder="e.g. John Doe"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       required
@@ -307,7 +307,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Email</label>
                     <input 
@@ -334,7 +334,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '14px' }}>
                   <div className="form-group">
                     <label className="form-label">Role Pengguna</label>
                     <select 
@@ -412,7 +412,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Commissioning...' : 'Authorize Account'}
+                  {isSubmitting ? 'Mendaftarkan...' : 'Buat Akun Pengguna'}
                 </button>
               </div>
             </form>

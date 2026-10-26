@@ -194,7 +194,7 @@ export default function LoginModal({ onLoginSuccess }) {
             disabled={loading}
             style={{ width: '100%', padding: '12px', fontSize: '0.95rem' }}
           >
-            {loading ? 'Authenticating Officer...' : 'Authorize & Enter Bridge Deck'}
+            {loading ? 'Memproses Autentikasi...' : 'Masuk ke Cloud Dashboard'}
           </button>
         </form>
       </div>

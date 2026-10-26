@@ -102,12 +102,12 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
     <div className="modal-overlay">
       <div className="modal-content" style={{ maxWidth: '540px' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ 
-              width: '38px', 
-              height: '38px', 
-              borderRadius: '10px', 
+              width: '36px', 
+              height: '36px', 
+              borderRadius: '9px', 
               background: '#eff6ff', 
               border: '1px solid #bfdbfe',
               color: '#1e3a8a',
@@ -115,69 +115,70 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <Disc size={20} />
+              <Disc size={18} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Instalasi Ulang OS (Rebuild)</h2>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Instalasi Ulang OS (Rebuild)</h2>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 Target VM: <strong style={{ color: 'var(--text-main)' }}>{vm?.name}</strong> (Node: {vm?.node_name || vm?.node_id})
               </div>
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose} disabled={isSubmitting}>
-            <X size={18} />
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={isSubmitting} style={{ padding: '6px' }}>
+            <X size={16} />
           </button>
         </div>
 
-        {/* Warning Banner */}
-        <div style={{ 
-          background: 'rgba(245, 158, 11, 0.08)', 
-          border: '1px solid rgba(245, 158, 11, 0.3)', 
-          borderRadius: '10px', 
-          padding: '12px 14px', 
-          marginBottom: '20px',
-          display: 'flex',
-          gap: '10px',
-          alignItems: 'flex-start'
-        }}>
-          <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
-          <div style={{ fontSize: '0.82rem', color: '#92400e', lineHeight: 1.45 }}>
-            <strong>Perhatian:</strong> Instalasi ulang (rebuild) akan mematikan VM jika sedang aktif dan memasang media instalasi baru ke boot drive. Data sistem operasi sebelumnya akan diatur ulang.
-          </div>
-        </div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div className="modal-body">
+            {/* Warning Banner */}
+            <div style={{ 
+              background: 'rgba(245, 158, 11, 0.08)', 
+              border: '1px solid rgba(245, 158, 11, 0.3)', 
+              borderRadius: '10px', 
+              padding: '12px 14px', 
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start'
+            }}>
+              <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ fontSize: '0.82rem', color: '#92400e', lineHeight: 1.45 }}>
+                <strong>Perhatian:</strong> Instalasi ulang (rebuild) akan mematikan VM jika sedang aktif dan memasang media instalasi baru ke boot drive. Data sistem operasi sebelumnya akan diatur ulang.
+              </div>
+            </div>
 
-        {/* Current Specs Summary */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(3, 1fr)', 
-          gap: '8px', 
-          background: '#f8fafc', 
-          padding: '12px', 
-          borderRadius: '10px', 
-          border: '1px solid var(--border-subtle)',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>CPU</div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{vm?.cpu_cores} vCPU</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>RAM</div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{Math.round((vm?.ram_mb || 0) / 1024)} GB</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>STORAGE</div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{vm?.disk_gb} GB Disk</div>
-          </div>
-        </div>
+            {/* Current Specs Summary */}
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(3, 1fr)', 
+              gap: '8px', 
+              background: '#f8fafc', 
+              padding: '12px', 
+              borderRadius: '10px', 
+              border: '1px solid var(--border-subtle)',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>CPU</div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{vm?.cpu_cores} vCPU</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>RAM</div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{Math.round((vm?.ram_mb || 0) / 1024)} GB</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>STORAGE</div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>{vm?.disk_gb} GB Disk</div>
+              </div>
+            </div>
 
-        {error && (
-          <div className="error-banner" style={{ marginBottom: '16px' }}>
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
+            {error && (
+              <div className="error-banner" style={{ marginBottom: '16px' }}>
+                <span>{error}</span>
+              </div>
+            )}
           {/* Target OS Selection */}
           <div className="form-group">
             <label className="form-label">Sistem Operasi Target</label>
@@ -280,11 +281,13 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
             />
           </div>
 
+          </div>
+
           {/* Action Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+          <div className="modal-footer">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-sm"
               onClick={onClose}
               disabled={isSubmitting}
             >
@@ -292,18 +295,17 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
             </button>
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary btn-sm"
               disabled={isSubmitting}
-              style={{ background: '#1e3a8a', borderColor: '#1e3a8a' }}
             >
               {isSubmitting ? (
                 <>
-                  <RefreshCw size={15} className="spin" />
+                  <RefreshCw size={14} className="spin" />
                   <span>Sedang Memproses Rebuild...</span>
                 </>
               ) : (
                 <>
-                  <Disc size={15} />
+                  <Disc size={14} />
                   <span>Mulai Instalasi Ulang OS</span>
                 </>
               )}

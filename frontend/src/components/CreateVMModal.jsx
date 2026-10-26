@@ -178,7 +178,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
             </div>
 
             {/* Target Cluster & Node */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px' }}>
               <div className="form-group">
                 <label className="form-label">Target Cluster ({clusters.length} Available)</label>
                 <select 

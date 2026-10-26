@@ -158,10 +158,10 @@ export default function BillingRatesConfig({ onRatesUpdated, onNavigateBilling }
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '26px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: '24px' }}>
         {/* Form Set Tarif */}
-        <div className="glass-panel" style={{ padding: '26px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sliders size={20} style={{ color: 'var(--ocean-blue)' }} />
               <span>Komponen Tarif Resource</span>
@@ -214,7 +214,7 @@ export default function BillingRatesConfig({ onRatesUpdated, onNavigateBilling }
                 <Cpu size={18} style={{ color: 'var(--ocean-blue)' }} />
                 <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>1. Tarif vCPU Compute</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px', alignItems: 'center' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
                     Harga per Core / Jam:
@@ -244,7 +244,7 @@ export default function BillingRatesConfig({ onRatesUpdated, onNavigateBilling }
                 <Database size={18} style={{ color: '#059669' }} />
                 <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>2. Tarif Memori RAM</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px', alignItems: 'center' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
                     Harga per GB RAM / Jam:
@@ -274,7 +274,7 @@ export default function BillingRatesConfig({ onRatesUpdated, onNavigateBilling }
                 <HardDrive size={18} style={{ color: '#b45309' }} />
                 <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>3. Tarif Storage Disk (NVMe/SAN)</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px', alignItems: 'center' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
                     Harga per GB Disk / Jam:
@@ -304,7 +304,7 @@ export default function BillingRatesConfig({ onRatesUpdated, onNavigateBilling }
                 <Wifi size={18} style={{ color: '#7c3aed' }} />
                 <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>4. Tarif Network Interface & IP</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px', alignItems: 'center' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
                     Harga per VM Network / Jam:

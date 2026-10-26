@@ -53,14 +53,14 @@ export default function VMResourceModal({ vm, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '640px' }}>
+      <div className="modal-content" style={{ maxWidth: '660px' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+        <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ 
-              width: '38px', 
-              height: '38px', 
-              borderRadius: '10px', 
+              width: '36px', 
+              height: '36px', 
+              borderRadius: '9px', 
               background: isRunning ? '#ecfdf5' : '#f1f5f9', 
               border: `1px solid ${isRunning ? '#a7f3d0' : 'var(--border-subtle)'}`,
               color: isRunning ? '#059669' : 'var(--text-dim)',
@@ -68,35 +68,36 @@ export default function VMResourceModal({ vm, onClose }) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <Activity size={20} className={isRunning ? 'spin' : ''} style={{ animationDuration: '6s' }} />
+              <Activity size={18} className={isRunning ? 'spin' : ''} style={{ animationDuration: '6s' }} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Live Resource Telemetry</h2>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Live Resource Telemetry</h2>
                 <span className={`status-dot ${isRunning ? 'running' : 'stopped'}`}></span>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: isRunning ? '#059669' : 'var(--text-dim)' }}>
+                <span style={{ fontSize: '0.76rem', fontWeight: 700, color: isRunning ? '#059669' : 'var(--text-dim)' }}>
                   {vm?.status}
                 </span>
               </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 VM: <strong style={{ color: 'var(--text-main)' }}>{vm?.name}</strong> • Node: <strong style={{ color: '#1e3a8a' }}>{vm?.node_name || vm?.node_id}</strong>
               </div>
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>
-            <X size={18} />
+          <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ padding: '6px' }}>
+            <X size={16} />
           </button>
         </div>
 
-        {error && (
-          <div className="error-banner" style={{ marginBottom: '16px' }}>
-            <AlertCircle size={15} />
-            <span>{error}</span>
-          </div>
-        )}
+        <div className="modal-body">
+          {error && (
+            <div className="error-banner" style={{ marginBottom: '16px' }}>
+              <AlertCircle size={15} />
+              <span>{error}</span>
+            </div>
+          )}
 
-        {/* Live Gauges Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
+          {/* Live Gauges Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', marginBottom: '16px' }}>
           {/* CPU Usage Gauge */}
           <div className="glass-panel" style={{ padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -237,9 +238,11 @@ export default function VMResourceModal({ vm, onClose }) {
           </div>
         </div>
 
+        </div>
+
         {/* Footer Close Button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-secondary" onClick={onClose}>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
             Tutup Monitor
           </button>
         </div>

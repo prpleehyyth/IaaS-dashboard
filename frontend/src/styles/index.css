@@ -88,15 +88,6 @@
   --shadow-glow-gold:   0 0 14px rgba(180, 83, 9, 0.12);
   --shadow-glow-ocean:  0 2px 10px rgba(30, 58, 138, 0.15);
   --shadow-glow-white:  0 1px 4px rgba(0, 0, 0, 0.04);
-
-  /* Subtle maritime grid */
-  --hull-stripe: repeating-linear-gradient(
-    90deg,
-    transparent 0px,
-    transparent 59px,
-    rgba(15, 23, 42, 0.018) 59px,
-    rgba(15, 23, 42, 0.018) 60px
-  );
 }
 
 /* ================================================================ RESET & BASE */
@@ -108,12 +99,7 @@
 
 body {
   font-family: var(--font-sans);
-  background: var(--bg-dark);
-  background-image:
-    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(30, 58, 138, 0.04) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 40% at 85% 100%, rgba(15, 23, 42, 0.03) 0%, transparent 60%),
-    var(--hull-stripe);
-  background-attachment: fixed;
+  background: #f8fafc;
   color: var(--text-main);
   min-height: 100vh;
   overflow-x: hidden;
@@ -138,42 +124,23 @@ h1, h2, h3, h4 {
   max-width: 1540px;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 32px 64px 32px;
+  padding: 26px 32px 56px 32px;
 }
 
-/* ================================================================ CRISP WHITE & NAVY PANELS */
+/* ================================================================ CLEAN & CRISP CARDS */
 .glass-panel {
-  background: var(--bg-card);
+  background: #ffffff;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }
 
-/* Top Navy accent stripe */
-.glass-panel::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    #0f172a 0%,
-    #1e3a8a 35%,
-    #2563eb 70%,
-    #0f172a 100%
-  );
-  opacity: 0.85;
-  pointer-events: none;
-}
-
 .glass-panel:hover {
   border-color: #cbd5e1;
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.08);
 }
 
 /* ================================================================ NAVBAR - Command Bridge */
@@ -414,6 +381,116 @@ h1, h2, h3, h4 {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Mobile Navigation Controls */
+.mobile-menu-toggle {
+  display: none;
+}
+
+.mobile-tabs-bar {
+  display: none;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 14px 8px 14px;
+  background: #ffffff;
+  border-top: 1px solid #f1f5f9;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-tab-btn {
+  background: #f1f5f9;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  font-family: var(--font-sans);
+}
+
+.mobile-tab-btn.active {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.mobile-drawer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  padding: 16px;
+  animation: fadeIn 0.15s ease-out;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-drawer-header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.mobile-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-drawer-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-drawer-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.88rem;
+  text-align: left;
+  transition: all 0.15s ease;
+  font-family: var(--font-sans);
+}
+
+.mobile-drawer-tab-btn:hover {
+  background: #f8fafc;
+}
+
+.mobile-drawer-tab-btn.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+.mobile-drawer-footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
 }
 
 /* ================================================================ BUTTONS */
@@ -722,39 +799,46 @@ tr:last-child td {
   box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.04);
   width: 100%;
   max-width: 620px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   animation: scaleUp 0.2s ease-out;
 }
 
 .modal-header {
-  padding: 20px 24px;
+  padding: 18px 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
   background: #f8fafc;
+  flex-shrink: 0;
 }
 
 .modal-body {
-  padding: 24px;
-  max-height: 80vh;
+  padding: 22px;
+  max-height: calc(90vh - 130px);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-footer {
-  padding: 16px 24px;
+  padding: 14px 22px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
   border-top: 1px solid var(--border-subtle);
   background: #f8fafc;
+  flex-shrink: 0;
 }
 
 /* ================================================================ TERMINAL */
 .console-modal-content {
   max-width: 980px;
-  height: 640px;
+  width: 100%;
+  height: min(640px, 86vh);
   display: flex;
   flex-direction: column;
 }
@@ -915,7 +999,7 @@ input[type="range"] {
   background: #94a3b8;
 }
 
-/* ================================================================ RESPONSIVE */
+/* ================================================================ RESPONSIVE BREAKPOINTS */
 @media (max-width: 1280px) {
   .brand-subtitle {
     display: none;
@@ -935,6 +1019,9 @@ input[type="range"] {
   .navbar {
     padding: 0 16px;
   }
+  .rates-config-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 @media (max-width: 860px) {
@@ -944,11 +1031,110 @@ input[type="range"] {
 }
 
 @media (max-width: 768px) {
-  .nav-tabs {
-    display: none;
+  /* Navigation */
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-menu-toggle {
+    display: inline-flex !important;
+  }
+  .mobile-tabs-bar {
+    display: flex !important;
+  }
+  .navbar {
+    padding: 0 12px;
+  }
+  .navbar-inner {
+    height: 56px;
+  }
+  .brand-logo-badge {
+    height: 32px;
+    padding: 2px 7px;
+  }
+  .brand-logo-img {
+    height: 20px;
   }
   .brand-title {
-    font-size: 1rem;
+    font-size: 0.95rem;
+  }
+
+  /* Layout and Padding */
+  .main-content {
+    padding: 14px 12px 48px;
+  }
+
+  /* Stat Cards */
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    padding: 14px;
+    gap: 12px;
+  }
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+  .stat-val {
+    font-size: 1.45rem;
+  }
+  .stat-lbl {
+    font-size: 0.74rem;
+  }
+
+  /* Modals */
+  .modal-overlay {
+    padding: 10px;
+  }
+  .modal-content {
+    max-width: 100%;
+    max-height: 94vh;
+    border-radius: var(--radius-md);
+  }
+  .modal-header {
+    padding: 14px 16px;
+  }
+  .modal-body {
+    padding: 16px;
+    max-height: calc(94vh - 120px);
+  }
+  .modal-footer {
+    padding: 12px 16px;
+  }
+  .console-modal-content {
+    height: min(520px, 88vh);
+  }
+
+  /* Tables */
+  th, td {
+    padding: 10px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-title {
+    font-size: 0.88rem;
+  }
+  .user-badge {
+    padding: 2px 4px;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+  }
+  .role-pill {
+    display: none;
+  }
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn {
+    padding: 8px 14px;
+    font-size: 0.82rem;
   }
 }
 
