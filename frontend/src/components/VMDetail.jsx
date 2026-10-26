@@ -669,35 +669,46 @@ export default function VMDetail({
 
           {vmBilling ? (
             <div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px', marginBottom: '22px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '14px', marginBottom: '22px' }}>
                 <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Biaya vCPU ({vm.cpu_cores} Cores)</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1e3a8a', marginTop: '4px' }}>
-                    {formatPrice(vmBilling.cpu_cost_hourly * 720)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Compute ({vm.cpu_cores} vCPU)</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e3a8a', marginTop: '4px' }}>
+                    {formatPrice(vmBilling.cpu_cost_hourly * 730)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
                   </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Rp {vmBilling.cpu_cost_hourly?.toFixed(2)}/jam</div>
                 </div>
 
                 <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Biaya RAM ({Math.round(vm.ram_mb / 1024)} GB)</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#059669', marginTop: '4px' }}>
-                    {formatPrice(vmBilling.ram_cost_hourly * 720)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Memory ({Math.round(vm.ram_mb / 1024)} GB)</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#059669', marginTop: '4px' }}>
+                    {formatPrice(vmBilling.ram_cost_hourly * 730)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
                   </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Rp {vmBilling.ram_cost_hourly?.toFixed(2)}/jam</div>
                 </div>
 
                 <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Biaya Storage ({vm.disk_gb} GB)</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#b45309', marginTop: '4px' }}>
-                    {formatPrice(vmBilling.storage_cost_hourly * 720)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Storage ({vm.disk_gb} GB)</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#b45309', marginTop: '4px' }}>
+                    {formatPrice(vmBilling.storage_cost_hourly * 730)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
                   </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Rp {vmBilling.storage_cost_hourly?.toFixed(2)}/jam</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Virtualisasi & Ops</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#7c3aed', marginTop: '4px' }}>
+                    {formatPrice(((vmBilling.virt_cost_hourly || 0) + (vmBilling.man_cost_hourly || 0) + (vmBilling.bandwidth_cost_hourly || 0)) * 730)} <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>/ bln</span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>VRT, Man Cost & Bandwidth</div>
                 </div>
 
                 <div style={{ background: '#eff6ff', padding: '16px', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
-                  <div style={{ fontSize: '0.78rem', color: '#1e3a8a', fontWeight: 700, textTransform: 'uppercase' }}>Total Estimasi Bulanan</div>
-                  <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#1e3a8a', fontWeight: 700, textTransform: 'uppercase' }}>Total Estimasi (730 jam)</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
                     {formatPrice(vmBilling.total_monthly)}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    ~{formatPrice(vmBilling.total_hourly)} / jam
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    ~Rp {vmBilling.total_hourly?.toFixed(2)} / jam
                   </div>
                 </div>
               </div>
