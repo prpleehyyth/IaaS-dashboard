@@ -218,6 +218,12 @@ type CreateVMRequest struct {
 	DiskGB         int            `json:"disk_gb" binding:"required,min=10"`
 	OSType         string         `json:"os_type" binding:"required"`
 	ISOImage       string         `json:"iso_image"`
+	// Network & VLAN Configuration (802.1Q)
+	NetworkBridge  string         `json:"network_bridge"` // e.g. "vmbr0", "vmbr1"
+	VLANTag        *int           `json:"vlan_tag"`       // e.g. 10, 20 (nil or <=0 for no VLAN)
+	NetworkModel   string         `json:"network_model"`  // "virtio", "e1000", "vmxnet3", "rtl8139"
+	Firewall       *bool          `json:"firewall"`       // default true
+	MACAddress     string         `json:"mac_address"`    // custom MAC or "auto"
 }
 
 type ISOImageInfo struct {

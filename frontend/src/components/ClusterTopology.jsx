@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 
-export default function ClusterTopology({ clusters = [], onRefresh, showToast }) {
+export default function ClusterTopology({ clusters = [], onRefresh, onNavigateCluster, showToast }) {
   const [selectedClusterFilter, setSelectedClusterFilter] = useState('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -406,7 +406,18 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
                     </div>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{cluster.name}</h2>
+                        <h2 
+                          onClick={() => onNavigateCluster && onNavigateCluster(cluster.id)}
+                          style={{ 
+                            fontSize: '1.3rem', 
+                            fontWeight: 800, 
+                            cursor: onNavigateCluster ? 'pointer' : 'default',
+                            textDecoration: onNavigateCluster ? 'underline dotted' : 'none'
+                          }}
+                          title="Buka Halaman Detail Cluster & Host"
+                        >
+                          {cluster.name}
+                        </h2>
                         <span className={isVMware ? 'badge-vmware' : 'badge-proxmox'}>{cluster.type}</span>
                         {cluster.version && (
                           <span style={{ fontSize: '0.74rem', fontWeight: 700, padding: '2px 8px', borderRadius: '6px', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>
@@ -450,6 +461,16 @@ export default function ClusterTopology({ clusters = [], onRefresh, showToast })
 
                     {isAdmin && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '6px' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onNavigateCluster && onNavigateCluster(cluster.id)}
+                          title="Buka Halaman Detail Cluster & Host"
+                          style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                        >
+                          <ExternalLink size={13} />
+                          <span>Detail Cluster</span>
+                        </button>
+
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => handleSyncCluster(cluster)}

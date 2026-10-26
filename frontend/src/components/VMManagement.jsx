@@ -17,7 +17,8 @@ import {
   Server,
   Lock,
   Disc,
-  Activity
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 
 export default function VMManagement({ 
@@ -33,6 +34,7 @@ export default function VMManagement({
   onOpenEditModal, 
   onOpenRebuildModal,
   onOpenResourceModal,
+  onNavigateVM,
   onDeleteVM 
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -224,7 +226,19 @@ export default function VMManagement({
                           <HardDrive size={19} />
                         </div>
                         <div>
-                          <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.98rem' }}>{vm.name}</div>
+                          <div 
+                            onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                            style={{ 
+                              fontWeight: 800, 
+                              color: 'var(--text-main)', 
+                              fontSize: '0.98rem',
+                              cursor: onNavigateVM ? 'pointer' : 'default',
+                              textDecoration: onNavigateVM ? 'underline dotted' : 'none'
+                            }}
+                            title="Buka Halaman Detail Virtual Machine"
+                          >
+                            {vm.name}
+                          </div>
                           <div style={{ fontSize: '0.78rem', color: '#1e3a8a' }}>{vm.os_type}</div>
                         </div>
                       </div>
@@ -371,6 +385,17 @@ export default function VMManagement({
                         >
                           <Activity size={13} />
                           <span>Monitor</span>
+                        </button>
+
+                        {/* View VM Detail */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Buka Halaman Detail Lengkap Virtual Machine"
+                          onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <ExternalLink size={13} />
+                          <span>Detail</span>
                         </button>
 
                         {/* Interactive Console */}

@@ -22,7 +22,7 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
   const tabs = [
     { id: 'overview', label: 'Overview', title: 'Ringkasan Sistem & VM', icon: LayoutDashboard },
     ...(isAdmin ? [
-      { id: 'clusters', label: 'Clusters', title: 'Clusters & Compute Nodes', icon: Server },
+      { id: 'clusters', label: 'Cluster & Host', title: 'Topologi Cluster & Server Fisik (Host)', icon: Server },
     ] : []),
     { id: 'vms', label: 'Virtual Machines', title: 'Daftar Virtual Machines', icon: HardDrive },
     ...(isAdmin ? [

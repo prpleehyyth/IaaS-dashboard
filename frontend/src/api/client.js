@@ -91,6 +91,10 @@ class ApiClient {
     return this.request('/clusters');
   }
 
+  async getCluster(id) {
+    return this.request(`/clusters/${id}`);
+  }
+
   async getClusterISOs(clusterId, nodeId) {
     const qs = nodeId ? `?node=${encodeURIComponent(nodeId)}` : '';
     return this.request(`/clusters/${clusterId}/isos${qs}`);
@@ -173,7 +177,7 @@ class ApiClient {
   async executeVMAction(id, action, force = false) {
     return this.request(`/vms/${id}/action`, {
       method: 'POST',
-      body: JSON.stringify({ action, force }),
+      body: JSON.stringify({ action: (action || '').toLowerCase(), force }),
     });
   }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Server, Cpu, Database, HardDrive, AlertCircle, Disc, RefreshCw } from 'lucide-react';
+import { X, Server, Cpu, Database, HardDrive, AlertCircle, Disc, RefreshCw, Network, Shield } from 'lucide-react';
 import { api } from '../api/client';
 
 const OS_OPTIONS = [
@@ -23,6 +23,15 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   const [cpuCores, setCpuCores] = useState(4);
   const [ramGB, setRamGB] = useState(8);
   const [diskGB, setDiskGB] = useState(50);
+  
+  // Network & VLAN Configuration
+  const [noNetwork, setNoNetwork] = useState(false);
+  const [networkBridge, setNetworkBridge] = useState('vmbr0');
+  const [vlanTag, setVlanTag] = useState('');
+  const [networkModel, setNetworkModel] = useState('virtio');
+  const [firewall, setFirewall] = useState(true);
+  const [macAddress, setMacAddress] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -122,6 +131,12 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
         disk_gb: parseInt(diskGB, 10),
         os_type: osType,
         iso_image: selectedIso,
+        // Network & VLAN configuration
+        network_bridge: noNetwork ? 'none' : (networkBridge.trim() || 'vmbr0'),
+        vlan_tag: (!noNetwork && vlanTag && parseInt(vlanTag, 10) > 0) ? parseInt(vlanTag, 10) : null,
+        network_model: noNetwork ? 'none' : networkModel,
+        firewall: !noNetwork ? firewall : false,
+        mac_address: (!noNetwork && macAddress.trim() && macAddress.trim().toLowerCase() !== 'auto') ? macAddress.trim() : 'auto',
       });
       onClose();
     } catch (err) {
@@ -315,6 +330,120 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Network & VLAN Configuration (802.1Q) */}
+            <div style={{ background: '#f8fafc', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-subtle)', marginTop: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Network size={16} style={{ color: 'var(--ocean-blue)' }} />
+                  <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    Network Configuration & VLAN
+                  </span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  <input
+                    type="checkbox"
+                    checked={noNetwork}
+                    onChange={(e) => setNoNetwork(e.target.checked)}
+                    style={{ cursor: 'pointer', accentColor: 'var(--ocean-blue)' }}
+                  />
+                  <span>No network device</span>
+                </label>
+              </div>
+
+              {!noNetwork ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '12px' }}>
+                    {/* Bridge */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.78rem' }}>Bridge Interface</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. vmbr0"
+                        value={networkBridge}
+                        onChange={(e) => setNetworkBridge(e.target.value)}
+                        required={!noNetwork}
+                        style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    {/* VLAN Tag */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label className="form-label" style={{ fontSize: '0.78rem', marginBottom: '4px' }}>VLAN Tag (802.1Q)</label>
+                        {vlanTag && parseInt(vlanTag, 10) > 0 && (
+                          <span style={{ fontSize: '0.7rem', color: '#1d4ed8', fontWeight: 600 }}>
+                            Tag: {vlanTag}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        max="4094"
+                        className="form-input"
+                        placeholder="no VLAN (e.g. 10, 20, 100)"
+                        value={vlanTag}
+                        onChange={(e) => setVlanTag(e.target.value)}
+                        style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    {/* Model */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.78rem' }}>vNIC Device Model</label>
+                      <select
+                        className="form-select"
+                        value={networkModel}
+                        onChange={(e) => setNetworkModel(e.target.value)}
+                        style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      >
+                        <option value="virtio">VirtIO (paravirtualized)</option>
+                        <option value="e1000">Intel E1000</option>
+                        <option value="vmxnet3">VMware vmxnet3</option>
+                        <option value="rtl8139">Realtek RTL8139</option>
+                      </select>
+                    </div>
+
+                    {/* MAC Address */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.78rem' }}>MAC Address</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="auto (generated by PVE)"
+                        value={macAddress}
+                        onChange={(e) => setMacAddress(e.target.value)}
+                        style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Firewall & Live Preview */}
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                      <input
+                        type="checkbox"
+                        checked={firewall}
+                        onChange={(e) => setFirewall(e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--ocean-blue)' }}
+                      />
+                      <Shield size={13} style={{ color: firewall ? '#059669' : '#94a3b8' }} />
+                      <span>Firewall</span>
+                    </label>
+
+                    <div style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#1e3a8a', padding: '3px 8px', borderRadius: '6px', fontFamily: 'monospace', fontWeight: 600 }}>
+                      net0: {networkModel},bridge={networkBridge || 'vmbr0'}{vlanTag && parseInt(vlanTag, 10) > 0 ? `,tag=${vlanTag}` : ''}{firewall ? ',firewall=1' : ',firewall=0'}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic', padding: '6px 0' }}>
+                  VM akan diprovision tanpa virtual network adapter (air-gapped / no NIC).
+                </div>
+              )}
             </div>
 
             {/* Hardware Specs Range Sliders */}

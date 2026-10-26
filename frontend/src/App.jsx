@@ -12,11 +12,15 @@ import BillingPreview from './components/BillingPreview';
 import LoginModal from './components/LoginModal';
 import RebuildVMModal from './components/RebuildVMModal';
 import VMResourceModal from './components/VMResourceModal';
+import VMDetail from './components/VMDetail';
+import ClusterDetail from './components/ClusterDetail';
 import { api } from './api/client';
 
 export default function App() {
   const [user, setUser] = useState(api.getUser());
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedVMId, setSelectedVMId] = useState(null);
+  const [selectedClusterId, setSelectedClusterId] = useState(null);
   
   // Data state
   const [summary, setSummary] = useState(null);
@@ -263,7 +267,11 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar 
         activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
+        setActiveTab={(tab) => {
+          setSelectedVMId(null);
+          setSelectedClusterId(null);
+          setActiveTab(tab);
+        }} 
         user={user}
         onSwitchRole={handleSwitchRole}
         onLogout={handleLogout}
@@ -271,69 +279,121 @@ export default function App() {
 
       {/* Main Page Content */}
       <main className="main-content">
-        {activeTab === 'overview' && (
-          <DashboardOverview 
-            summary={summary} 
-            vms={vms}
-            fleetTelemetry={fleetTelemetry}
+        {selectedVMId ? (
+          <VMDetail 
+            vmId={selectedVMId}
             user={user}
-            onStartVM={handleStartVM}
-            onStopVM={handleStopVM}
-            onRestartVM={handleRestartVM}
-            onOpenResourceModal={(vm) => setResourceVM(vm)}
-            onOpenRebuildModal={(vm) => setRebuildVM(vm)}
-            onNavigateTab={setActiveTab} 
-          />
-        )}
-
-        {activeTab === 'clusters' && user?.role === 'ADMIN' && (
-          <ClusterTopology 
-            clusters={clusters} 
-            onRefresh={loadData} 
-            showToast={showToast}
-          />
-        )}
-
-        {activeTab === 'vms' && (
-          <VMManagement 
-            vms={vms}
-            user={user}
-            clusters={clusters}
-            fleetTelemetry={fleetTelemetry}
-            onStartVM={handleStartVM}
-            onStopVM={handleStopVM}
-            onRestartVM={handleRestartVM}
+            onBack={() => setSelectedVMId(null)}
+            onNavigateCluster={(cid) => {
+              setSelectedVMId(null);
+              setSelectedClusterId(cid);
+              setActiveTab('clusters');
+            }}
             onOpenConsole={(vm) => setConsoleVM(vm)}
-            onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onOpenEditModal={(vm) => setEditingVM(vm)}
             onOpenRebuildModal={(vm) => setRebuildVM(vm)}
             onOpenResourceModal={(vm) => setResourceVM(vm)}
-            onDeleteVM={handleDeleteVM}
+            onDeleteVM={(vm) => {
+              handleDeleteVM(vm);
+              setSelectedVMId(null);
+            }}
+            showToast={showToast}
           />
-        )}
-
-        {activeTab === 'users' && user?.role === 'ADMIN' && (
-          <UserManagement 
-            users={users}
-            vms={vms}
-            tenants={tenants}
+        ) : selectedClusterId && user?.role === 'ADMIN' ? (
+          <ClusterDetail 
+            clusterId={selectedClusterId}
+            user={user}
+            onBack={() => setSelectedClusterId(null)}
+            onNavigateVM={(vid) => {
+              setSelectedClusterId(null);
+              setSelectedVMId(vid);
+              setActiveTab('vms');
+            }}
             onRefresh={loadData}
             showToast={showToast}
           />
-        )}
+        ) : (
+          <>
+            {activeTab === 'overview' && (
+              <DashboardOverview 
+                summary={summary} 
+                vms={vms}
+                fleetTelemetry={fleetTelemetry}
+                user={user}
+                onStartVM={handleStartVM}
+                onStopVM={handleStopVM}
+                onRestartVM={handleRestartVM}
+                onOpenResourceModal={(vm) => setResourceVM(vm)}
+                onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+                onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onNavigateTab={(tab) => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab(tab);
+                }} 
+              />
+            )}
 
-        {activeTab === 'billing-rates' && user?.role === 'ADMIN' && (
-          <BillingRatesConfig 
-            onRatesUpdated={() => showToast('Tarif billing berhasil disimpan dan disinkronkan')}
-            onNavigateBilling={() => setActiveTab('billing')}
-          />
-        )}
+            {activeTab === 'clusters' && user?.role === 'ADMIN' && (
+              <ClusterTopology 
+                clusters={clusters} 
+                onRefresh={loadData} 
+                onNavigateCluster={(cid) => setSelectedClusterId(cid)}
+                showToast={showToast}
+              />
+            )}
 
-        {activeTab === 'billing' && (
-          <BillingPreview 
-            user={user}
-            onNavigateRates={() => setActiveTab('billing-rates')}
-          />
+            {activeTab === 'vms' && (
+              <VMManagement 
+                vms={vms}
+                user={user}
+                clusters={clusters}
+                fleetTelemetry={fleetTelemetry}
+                onStartVM={handleStartVM}
+                onStopVM={handleStopVM}
+                onRestartVM={handleRestartVM}
+                onOpenConsole={(vm) => setConsoleVM(vm)}
+                onOpenCreateModal={() => setIsCreateModalOpen(true)}
+                onOpenEditModal={(vm) => setEditingVM(vm)}
+                onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+                onOpenResourceModal={(vm) => setResourceVM(vm)}
+                onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onDeleteVM={handleDeleteVM}
+              />
+            )}
+
+            {activeTab === 'users' && user?.role === 'ADMIN' && (
+              <UserManagement 
+                users={users}
+                vms={vms}
+                tenants={tenants}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
+
+            {activeTab === 'billing-rates' && user?.role === 'ADMIN' && (
+              <BillingRatesConfig 
+                onRatesUpdated={() => showToast('Tarif billing berhasil disimpan dan disinkronkan')}
+                onNavigateBilling={() => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab('billing');
+                }}
+              />
+            )}
+
+            {activeTab === 'billing' && (
+              <BillingPreview 
+                user={user}
+                onNavigateRates={() => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab('billing-rates');
+                }}
+              />
+            )}
+          </>
         )}
       </main>
 

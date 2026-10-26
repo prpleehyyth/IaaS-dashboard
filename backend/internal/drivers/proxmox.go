@@ -423,7 +423,45 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	formData.Set("ostype", "l26")
 	formData.Set("scsihw", "virtio-scsi-pci")
 	formData.Set("scsi0", fmt.Sprintf("%s:%d", storage, diskGB))
-	formData.Set("net0", "virtio,bridge=vmbr0")
+	// Network & VLAN Configuration (net0)
+	var mac string
+	if req.NetworkBridge != "none" && req.NetworkModel != "none" {
+		model := strings.ToLower(strings.TrimSpace(req.NetworkModel))
+		if model == "" {
+			model = "virtio"
+		}
+		bridge := strings.TrimSpace(req.NetworkBridge)
+		if bridge == "" {
+			bridge = "vmbr0"
+		}
+
+		cleanMAC := strings.TrimSpace(req.MACAddress)
+		var net0Parts []string
+		if cleanMAC != "" && strings.ToLower(cleanMAC) != "auto" {
+			net0Parts = append(net0Parts, fmt.Sprintf("%s=%s", model, cleanMAC))
+			mac = cleanMAC
+		} else {
+			net0Parts = append(net0Parts, model)
+			mac = fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+		}
+		net0Parts = append(net0Parts, fmt.Sprintf("bridge=%s", bridge))
+
+		// 802.1Q VLAN Tagging (1 - 4094)
+		if req.VLANTag != nil && *req.VLANTag > 0 && *req.VLANTag <= 4094 {
+			net0Parts = append(net0Parts, fmt.Sprintf("tag=%d", *req.VLANTag))
+		}
+
+		// Proxmox Firewall
+		if req.Firewall == nil || *req.Firewall {
+			net0Parts = append(net0Parts, "firewall=1")
+		} else {
+			net0Parts = append(net0Parts, "firewall=0")
+		}
+
+		net0Str := strings.Join(net0Parts, ",")
+		formData.Set("net0", net0Str)
+		log.Printf("[Proxmox] Configured network for VM %d: %s", vmid, net0Str)
+	}
 
 	// CD-ROM / ISO Attachment and Boot Priority
 	if req.ISOImage != "" && req.ISOImage != "none" {
@@ -449,7 +487,12 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	log.Printf("[Proxmox] Successfully created VM %d ('%s') on node %s: %s", vmid, cleanName, nodeName, string(bodyBytes))
 
 	ip := fmt.Sprintf("192.168.1.%d", 100+(vmid%150))
-	mac := fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+	if req.VLANTag != nil && *req.VLANTag > 0 {
+		ip = fmt.Sprintf("10.%d.1.%d", *req.VLANTag, 10+(vmid%200))
+	}
+	if mac == "" {
+		mac = fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+	}
 
 	return vmid, ip, mac, nil
 }

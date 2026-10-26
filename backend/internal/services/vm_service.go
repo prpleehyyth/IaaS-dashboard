@@ -369,7 +369,7 @@ func (s *VMService) ExecutePowerAction(ctx context.Context, vmID, userID, tenant
 	var targetStatus models.VMStatus
 	var logAction string
 
-	switch action {
+	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "start":
 		if err := driver.StartVM(ctx, cluster, &node, vm.VMID); err != nil {
 			return nil, err

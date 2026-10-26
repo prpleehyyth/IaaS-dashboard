@@ -23,7 +23,8 @@ import {
   FileSpreadsheet,
   FileCode,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -37,6 +38,7 @@ export default function DashboardOverview({
   onRestartVM,
   onOpenResourceModal,
   onOpenRebuildModal,
+  onNavigateVM,
   onNavigateTab 
 }) {
   const isAdmin = user?.role === 'ADMIN';
@@ -544,7 +546,17 @@ export default function DashboardOverview({
                             <Server size={16} />
                           </div>
                           <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.92rem' }}>
+                            <div 
+                              onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                              style={{ 
+                                fontWeight: 700, 
+                                color: 'var(--text-main)', 
+                                fontSize: '0.92rem',
+                                cursor: onNavigateVM ? 'pointer' : 'default',
+                                textDecoration: onNavigateVM ? 'underline dotted' : 'none'
+                              }}
+                              title="Buka Halaman Detail Virtual Machine"
+                            >
                               {vm.name}
                             </div>
                             <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
@@ -676,6 +688,16 @@ export default function DashboardOverview({
                           >
                             <Activity size={12} />
                             <span>Monitor</span>
+                          </button>
+
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Buka Halaman Detail Virtual Machine"
+                            onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}
+                          >
+                            <span>Detail</span>
+                            <ExternalLink size={11} />
                           </button>
                         </div>
                       </td>
