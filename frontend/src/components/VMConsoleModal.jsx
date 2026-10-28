@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal, Maximize2, Minimize2, X, RefreshCw, Copy, Check, ExternalLink, Monitor, Play, Cpu, HardDrive } from 'lucide-react';
+import { Terminal, Maximize2, Minimize2, X, RefreshCw, Copy, Check, ExternalLink, Monitor, Play, Cpu, HardDrive, AlertCircle } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function VMConsoleModal({ vm, onClose }) {
@@ -207,8 +207,18 @@ const processTerminalStream = (prev, data) => {
 
   // Convert ANSI escape sequences to HTML spans and strip non-printable control characters
   const renderAnsi = (text) => {
-    // Strip non-printable control characters that render as glyph boxes in browsers
-    const sanitized = (text || '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+    // 1. Escape HTML entities first to prevent arbitrary tag/script injection (DOM-based XSS mitigation)
+    const escaped = (text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    // 2. Strip non-printable control characters that render as glyph boxes in browsers
+    const sanitized = escaped.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+
+    // 3. Replace authorized ANSI color escape sequences with safe styled span tags
     let clean = sanitized
       .replace(/\x1b\[1;32m/g, '<span style="color:#34d399;font-weight:bold;">')
       .replace(/\x1b\[1;34m/g, '<span style="color:#38bdf8;font-weight:bold;">')
@@ -492,41 +502,98 @@ const processTerminalStream = (prev, data) => {
           )}
 
           {/* Mode 2: NoVNC Graphical Console Viewer */}
-          {activeTab === 'novnc' && session?.novnc_url && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#020617', padding: '16px', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', maxWidth: '480px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '14px', padding: '28px' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: 'rgba(56, 189, 248, 0.15)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                  <Monitor size={28} color="#38bdf8" />
-                </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', marginBottom: '8px' }}>
-                  Layar Grafis Proxmox / VMware NoVNC
-                </h3>
-                <p style={{ color: '#94a3b8', fontSize: '0.86rem', lineHeight: 1.5, marginBottom: '22px' }}>
-                  Viewer grafis NoVNC menampilkan output monitor langsung dari BIOS, GRUB, dan boot installer sistem operasi.
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
-                  <a
-                    href={session.novnc_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-primary"
-                    style={{ padding: '9px 18px', fontSize: '0.86rem' }}
-                  >
-                    <ExternalLink size={15} />
-                    <span>Buka NoVNC di Tab Baru</span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('terminal')}
-                    className="btn btn-secondary"
-                    style={{ padding: '9px 18px', fontSize: '0.86rem', color: '#ffffff' }}
-                  >
-                    Kembali ke Terminal
-                  </button>
+          {activeTab === 'novnc' && session?.novnc_url && (() => {
+            let hypervisorBaseUrl = null;
+            try {
+              const u = new URL(session.novnc_url);
+              hypervisorBaseUrl = `${u.protocol}//${u.host}`;
+            } catch (e) {
+              hypervisorBaseUrl = null;
+            }
+
+            return (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#020617', padding: '24px 16px', alignItems: 'center', justifyContent: 'center', overflowY: 'auto' }}>
+                <div style={{ textAlign: 'center', maxWidth: '540px', background: 'rgba(15, 23, 42, 0.88)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'rgba(56, 189, 248, 0.15)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                    <Monitor size={28} color="#38bdf8" />
+                  </div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff', marginBottom: '8px' }}>
+                    Layar Grafis Proxmox / VMware NoVNC
+                  </h3>
+                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.5, marginBottom: '18px' }}>
+                    Viewer grafis NoVNC menampilkan output monitor langsung dari BIOS, GRUB, dan boot installer sistem operasi.
+                  </p>
+
+                  {/* Warning & Guidance for Error 401: No ticket */}
+                  <div style={{
+                    background: 'rgba(234, 179, 8, 0.08)',
+                    border: '1px solid rgba(234, 179, 8, 0.3)',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    textAlign: 'left',
+                    marginBottom: '20px',
+                    fontSize: '0.82rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#facc15', fontWeight: 700, marginBottom: '6px' }}>
+                      <AlertCircle size={16} />
+                      <span>Catatan Jika Muncul &ldquo;Error 401: No ticket&rdquo;</span>
+                    </div>
+                    <p style={{ margin: 0, lineHeight: 1.5, color: '#cbd5e1' }}>
+                      Web console NoVNC Proxmox membutuhkan cookie sesi resmi (<strong>PVEAuthCookie</strong>) dari server Proxmox.
+                      Jika Anda membuka di mode <strong style={{ color: '#f87171' }}>Incognito/Penyamaran</strong> atau belum pernah login ke antarmuka web Proxmox pada browser ini, Proxmox akan menolak tiket.
+                    </p>
+                    {hypervisorBaseUrl && (
+                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(234, 179, 8, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>1. Login dahulu ke Proxmox:</span>
+                        <a
+                          href={hypervisorBaseUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: '0.8rem',
+                            color: '#38bdf8',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            textDecoration: 'none',
+                            background: 'rgba(56, 189, 248, 0.12)',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(56, 189, 248, 0.3)'
+                          }}
+                        >
+                          <ExternalLink size={12} />
+                          Buka Web GUI Proxmox ({hypervisorBaseUrl})
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <a
+                      href={session.novnc_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{ padding: '9px 18px', fontSize: '0.86rem' }}
+                    >
+                      <ExternalLink size={15} />
+                      <span>Buka NoVNC di Tab Baru</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('terminal')}
+                      className="btn btn-secondary"
+                      style={{ padding: '9px 18px', fontSize: '0.86rem', color: '#ffffff' }}
+                    >
+                      Gunakan Terminal Interaktif
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>

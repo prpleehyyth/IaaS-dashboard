@@ -47,12 +47,20 @@ func (h *VMHandler) GetVM(c *gin.Context) {
 		return
 	}
 
-	// Operators can only view their own tenant's VMs
+	// Operators can only view their own assigned VMs within their tenant
 	role := middleware.GetUserRole(c)
 	tenantID := middleware.GetTenantID(c)
-	if role == models.RoleOperator && vm.TenantID != tenantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: cannot access VM of another tenant"})
-		return
+	if role == models.RoleOperator {
+		if vm.TenantID != tenantID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: cannot access VM of another tenant"})
+			return
+		}
+		userID := middleware.GetUserID(c)
+		hasAccess, err := h.vmService.CheckOperatorVMAccess(c.Request.Context(), userID, vmID)
+		if err != nil || !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: this virtual machine is not assigned to your operator account"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, vm)

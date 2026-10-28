@@ -50,10 +50,13 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authService)
 	clusterHandler := handlers.NewClusterHandler(clusterService)
 	vmHandler := handlers.NewVMHandler(vmService)
-	consoleHandler := handlers.NewConsoleHandler(consoleService, vmService, redisClient)
+	consoleHandler := handlers.NewConsoleHandler(consoleService, vmService, redisClient, cfg.JWTSecret)
 	tenantHandler := handlers.NewTenantHandler(db)
 	meteringHandler := handlers.NewMeteringHandler(meteringService)
 	userHandler := handlers.NewUserHandler(userService)
+
+	// Rate limiter for authentication (max 30 login attempts per minute per IP)
+	loginLimiter := middleware.NewLoginRateLimiter(30, 1*time.Minute)
 
 	// 5. Background Metering Worker (records periodic usage snapshots for billing readiness)
 	go startMeteringWorker(db)
@@ -61,9 +64,11 @@ func main() {
 	// 6. Router Setup
 	r := gin.Default()
 
-	// CORS configuration
+	// CORS configuration (Dynamic origin reflection with credentials support)
 	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
+		AllowOriginFunc: func(origin string) bool {
+			return true
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -81,9 +86,8 @@ func main() {
 		})
 	})
 
-	r.POST("/api/v1/auth/login", authHandler.Login)
+	r.POST("/api/v1/auth/login", loginLimiter.Middleware(), authHandler.Login)
 	r.GET("/api/v1/vms/:id/console/ws", consoleHandler.HandleConsoleWebSocket)
-	r.GET("/api/v1/vms/console/ws", consoleHandler.HandleConsoleWebSocket)
 
 	// Authenticated Routes
 	api := r.Group("/api/v1")

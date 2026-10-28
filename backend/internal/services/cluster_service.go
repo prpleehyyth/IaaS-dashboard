@@ -300,6 +300,15 @@ func (s *ClusterService) DeleteNode(ctx context.Context, clusterID, nodeID strin
 }
 
 func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.TestClusterConnectionRequest) (*models.TestClusterConnectionResponse, error) {
+	endpointLower := strings.ToLower(strings.TrimSpace(req.Endpoint))
+	if !strings.HasPrefix(endpointLower, "http://") && !strings.HasPrefix(endpointLower, "https://") {
+		return nil, errors.New("invalid endpoint protocol: must begin with http:// or https://")
+	}
+	// SSRF mitigation: block access to cloud metadata services
+	if strings.Contains(endpointLower, "169.254.169.254") || strings.Contains(endpointLower, "metadata.google.internal") {
+		return nil, errors.New("security violation: connection to cloud metadata services is forbidden")
+	}
+
 	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, req.AuthUser, req.AuthSecret, req.InsecureSSL, req.Datacenter)
 	testCluster := &models.Cluster{
 		ID:          "test-cluster",

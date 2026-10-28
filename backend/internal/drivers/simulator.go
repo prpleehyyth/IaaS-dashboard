@@ -177,6 +177,12 @@ func (s *SimulatorDriver) DiscoverVMs(ctx context.Context, cluster *models.Clust
 func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {
 	return []models.ISOImageInfo{
 		{
+			VolID:    "local:iso/ubuntu-24.04-live-server-amd64.iso",
+			FileName: "ubuntu-24.04-live-server-amd64.iso",
+			SizeGB:   2.45,
+			Storage:  "local",
+		},
+		{
 			VolID:    "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
 			FileName: "ubuntu-22.04.4-live-server-amd64.iso",
 			SizeGB:   1.97,
@@ -189,9 +195,21 @@ func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster,
 			Storage:  "local",
 		},
 		{
+			VolID:    "local:iso/rocky-9.3-x86_64-minimal.iso",
+			FileName: "rocky-9.3-x86_64-minimal.iso",
+			SizeGB:   1.82,
+			Storage:  "local",
+		},
+		{
 			VolID:    "local:iso/alpine-standard-3.19.1-x86_64.iso",
 			FileName: "alpine-standard-3.19.1-x86_64.iso",
 			SizeGB:   0.21,
+			Storage:  "local",
+		},
+		{
+			VolID:    "local:iso/Windows_Server_2022_x64.iso",
+			FileName: "Windows_Server_2022_x64.iso",
+			SizeGB:   4.85,
 			Storage:  "local",
 		},
 	}, nil

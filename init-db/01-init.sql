@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS virtual_machines (
     disk_gb INT NOT NULL DEFAULT 50,
     ip_address VARCHAR(45) DEFAULT '',
     mac_address VARCHAR(45) DEFAULT '',
-    os_type VARCHAR(50) DEFAULT 'Ubuntu 22.04 LTS',
+    os_type VARCHAR(50) DEFAULT 'Ubuntu',
     console_port INT DEFAULT 0,
     vmid INT DEFAULT 0, -- Proxmox VMID or VMware MoRef
     created_by UUID REFERENCES users(id),
@@ -147,8 +147,8 @@ ON CONFLICT (id) DO NOTHING;
 -- 2. Default Administrator Account (admin / admin123)
 INSERT INTO users (id, tenant_id, username, email, password_hash, full_name, role, status)
 VALUES 
-    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'admin', 'admin@cloud.local', '$2a$10$X7nC4KxO9l1s7E4Fz.o0teX/o.4p6KxT4QzE9F8E4p6KxT4QzE9F8', 'Cloud Administrator', 'ADMIN', 'ACTIVE')
-ON CONFLICT (id) DO NOTHING;
+    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'admin', 'admin@cloud.local', '$2b$12$ycqPEuN3oSj8j23Fftg2z.1JauHr423u.AiF9ZUJ5Aaz1H42Fg8cS', 'Cloud Administrator', 'ADMIN', 'ACTIVE')
+ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 -- 9. Billing Rates Configuration
 CREATE TABLE IF NOT EXISTS billing_rates (

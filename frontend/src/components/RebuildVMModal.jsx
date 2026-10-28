@@ -2,18 +2,36 @@ import React, { useState, useEffect } from 'react';
 import { X, Disc, AlertTriangle, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 
+const extractIsoVersion = (filename) => {
+  if (!filename) return null;
+  const match = filename.match(/\b(\d{1,4}(\.\d+)+|\b20\d{2}\b)/);
+  return match ? match[0] : null;
+};
+
 const OS_OPTIONS = [
-  'Ubuntu 22.04 LTS',
-  'Ubuntu 24.04 LTS',
-  'Debian 12 Bookworm',
-  'Alpine Linux 3.19',
-  'Rocky Linux 9',
-  'Windows Server 2022',
-  'Arch Linux'
+  'Ubuntu',
+  'Debian',
+  'Rocky Linux',
+  'Alpine Linux',
+  'Arch Linux',
+  'Windows Server',
+  'Custom / Other Linux'
 ];
 
 export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
-  const [osType, setOsType] = useState(vm?.os_type || 'Ubuntu 22.04 LTS');
+  const getInitialOsType = (currentOs) => {
+    if (!currentOs) return 'Ubuntu';
+    const lower = currentOs.toLowerCase();
+    if (lower.includes('ubuntu')) return 'Ubuntu';
+    if (lower.includes('debian')) return 'Debian';
+    if (lower.includes('rocky') || lower.includes('rhel') || lower.includes('centos')) return 'Rocky Linux';
+    if (lower.includes('alpine')) return 'Alpine Linux';
+    if (lower.includes('arch')) return 'Arch Linux';
+    if (lower.includes('win')) return 'Windows Server';
+    return OS_OPTIONS.includes(currentOs) ? currentOs : 'Ubuntu';
+  };
+
+  const [osType, setOsType] = useState(() => getInitialOsType(vm?.os_type));
   const [isoList, setIsoList] = useState([]);
   const [selectedIso, setSelectedIso] = useState('');
   const [filterByOS, setFilterByOS] = useState(true);
@@ -32,7 +50,7 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
     if (osLower.includes('ubuntu')) keyword = 'ubuntu';
     else if (osLower.includes('debian')) keyword = 'debian';
     else if (osLower.includes('alpine')) keyword = 'alpine';
-    else if (osLower.includes('rocky')) keyword = 'rocky';
+    else if (osLower.includes('rocky') || osLower.includes('rhel') || osLower.includes('centos')) keyword = 'rocky';
     else if (osLower.includes('arch')) keyword = 'arch';
     else if (osLower.includes('win')) keyword = 'win';
 
@@ -41,6 +59,10 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
     const matched = isoList.filter((iso) => {
       const name = (iso.filename || '').toLowerCase();
       const vol = (iso.volid || '').toLowerCase();
+      if (keyword === 'rocky') {
+        return name.includes('rocky') || name.includes('rhel') || name.includes('centos') ||
+               vol.includes('rocky') || vol.includes('rhel') || vol.includes('centos');
+      }
       return name.includes(keyword) || vol.includes(keyword);
     });
 
@@ -197,7 +219,7 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
           {/* ISO Image Selection */}
           <div className="form-group">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <label className="form-label" style={{ marginBottom: 0 }}>ISO Installation Media</label>
+              <label className="form-label" style={{ marginBottom: 0 }}>ISO Installation Media — Pilih Versi</label>
               {isLoadingIsos && (
                 <span style={{ fontSize: '0.75rem', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <RefreshCw size={12} className="spin" /> Memuat ISO cluster...
@@ -216,21 +238,24 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
               ) : (
                 <>
                   <option value="">Gunakan image default cloud</option>
-                  {filteredIsoList.map((iso) => (
-                    <option key={iso.volid} value={iso.volid}>
-                      {iso.filename} ({iso.size_gb} GB - {iso.storage})
-                    </option>
-                  ))}
+                  {filteredIsoList.map((iso) => {
+                    const version = extractIsoVersion(iso.filename);
+                    return (
+                      <option key={iso.volid} value={iso.volid}>
+                        {iso.filename} {version ? `(Versi ${version} • ${iso.size_gb} GB - ${iso.storage})` : `(${iso.size_gb} GB - ${iso.storage})`}
+                      </option>
+                    );
+                  })}
                 </>
               )}
             </select>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
               <div style={{ fontSize: '0.75rem', color: selectedIso ? '#059669' : 'var(--text-dim)' }}>
                 {selectedIso
-                  ? `✓ Media installer ISO khusus ${osType.split(' ')[0]} siap di-boot.`
+                  ? `✓ Media installer ISO khusus ${osType} siap di-boot.`
                   : (filteredIsoList.length === 0
-                      ? `Tidak ditemukan ISO khusus ${osType.split(' ')[0]}.`
-                      : 'Media instalasi ISO yang terdeteksi di storage cluster node.')}
+                      ? `Tidak ditemukan ISO khusus ${osType}.`
+                      : 'Pilih file ISO untuk menentukan versi sistem operasi yang akan di-reinstall.')}
               </div>
 
               {isoList.length > 0 && (
@@ -247,7 +272,7 @@ export default function RebuildVMModal({ vm, onClose, onRebuildSuccess }) {
                     textDecoration: 'underline'
                   }}
                 >
-                  {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType.split(' ')[0]} (${filteredIsoList.length})`}
+                  {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType} (${filteredIsoList.length})`}
                 </button>
               )}
             </div>

@@ -26,14 +26,20 @@ import {
   formatCurrencyIDR 
 } from '../constants/pricingCatalog';
 
+export const extractIsoVersion = (filename) => {
+  if (!filename) return null;
+  // Match version patterns like 26.04, 24.04.1, 12.5.0, 3.19.1, 9.3, 2022, 2019, etc.
+  const match = filename.match(/\b(\d{1,4}(\.\d+)+|\b20\d{2}\b)/);
+  return match ? match[0] : null;
+};
+
 const OS_OPTIONS = [
-  'Ubuntu 22.04 LTS',
-  'Ubuntu 24.04 LTS',
-  'Debian 12 Bookworm',
-  'Rocky Linux 9',
-  'Alpine Linux 3.19',
+  'Ubuntu',
+  'Debian',
+  'Rocky Linux',
+  'Alpine Linux',
   'Arch Linux',
-  'Windows Server 2022',
+  'Windows Server',
   'Custom / Other Linux'
 ];
 
@@ -126,7 +132,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   const [selectedNodeId, setSelectedNodeId] = useState(clusters[0]?.nodes?.[0]?.id || '');
 
   // Step 3: OS & ISO
-  const [osType, setOsType] = useState('Ubuntu 22.04 LTS');
+  const [osType, setOsType] = useState('Ubuntu');
   const [isoList, setIsoList] = useState([]);
   const [selectedIso, setSelectedIso] = useState('');
   const [isLoadingIsos, setIsLoadingIsos] = useState(false);
@@ -233,7 +239,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
     if (osLower.includes('ubuntu')) keyword = 'ubuntu';
     else if (osLower.includes('debian')) keyword = 'debian';
     else if (osLower.includes('alpine')) keyword = 'alpine';
-    else if (osLower.includes('rocky')) keyword = 'rocky';
+    else if (osLower.includes('rocky') || osLower.includes('rhel') || osLower.includes('centos')) keyword = 'rocky';
     else if (osLower.includes('arch')) keyword = 'arch';
     else if (osLower.includes('win')) keyword = 'win';
 
@@ -242,9 +248,17 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
     return isoList.filter((iso) => {
       const fileName = (iso.filename || '').toLowerCase();
       const vol = (iso.volid || '').toLowerCase();
+      if (keyword === 'rocky') {
+        return fileName.includes('rocky') || fileName.includes('rhel') || fileName.includes('centos') ||
+               vol.includes('rocky') || vol.includes('rhel') || vol.includes('centos');
+      }
       return fileName.includes(keyword) || vol.includes(keyword);
     });
   }, [isoList, osType, filterByOS]);
+
+  const selectedIsoObj = useMemo(() => {
+    return isoList.find(i => i.volid === selectedIso);
+  }, [isoList, selectedIso]);
 
   const fetchISOs = async (clusterId, nodeId) => {
     if (!clusterId) {
@@ -1241,7 +1255,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   </h3>
                 </div>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Pilih sistem operasi yang akan dipasang dan tentukan file ISO installer dari storage cluster.
+                  Pilih distro sistem operasi yang akan dipasang, lalu tentukan file ISO boot installer dari storage cluster untuk memilih versinya.
                 </p>
               </div>
 
@@ -1259,6 +1273,9 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                     <option key={os} value={os}>{os}</option>
                   ))}
                 </select>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Distro sistem operasi dasar. Pilihan versi spesifik dipilih pada file ISO boot installer di bawah.
+                </div>
               </div>
 
               {/* Boot / Installer ISO (CD-ROM) */}
@@ -1266,7 +1283,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label className="form-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                     <Disc size={15} style={{ color: 'var(--ocean-blue)' }} />
-                    <span>Boot / Installer ISO (CD-ROM Virtual)</span>
+                    <span>Boot / Installer ISO — Pilih Versi (CD-ROM Virtual)</span>
                   </label>
                   <button
                     type="button"
@@ -1299,25 +1316,30 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   disabled={isLoadingIsos}
                 >
                   <option value="">Tanpa ISO (Blank Virtual Disk / PXE Boot)</option>
-                  {filteredIsoList.map((iso) => (
-                    <option key={iso.volid} value={iso.volid}>
-                      {iso.filename} ({iso.storage} • {iso.size_gb} GB)
-                    </option>
-                  ))}
+                  {filteredIsoList.map((iso) => {
+                    const version = extractIsoVersion(iso.filename);
+                    return (
+                      <option key={iso.volid} value={iso.volid}>
+                        {iso.filename} {version ? `(Versi ${version} • ${iso.storage} • ${iso.size_gb} GB)` : `(${iso.storage} • ${iso.size_gb} GB)`}
+                      </option>
+                    );
+                  })}
                 </select>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
                   {selectedIso ? (
                     <div style={{ fontSize: '0.76rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Check size={14} />
-                      <span>ISO {filterByOS ? `khusus ${osType.split(' ')[0]}` : ''} akan dipasang ke virtual CD-ROM (ide2) sebagai boot device utama.</span>
+                      <span>
+                        ISO <strong>{selectedIsoObj?.filename || selectedIso}</strong> {extractIsoVersion(selectedIsoObj?.filename) ? `(Versi ${extractIsoVersion(selectedIsoObj.filename)})` : ''} akan dipasang ke virtual CD-ROM (ide2) sebagai boot installer {osType}.
+                      </span>
                     </div>
                   ) : (
                     <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                       {filteredIsoList.length === 0 && !isLoadingIsos ? (
-                        <span>Tidak ditemukan file ISO khusus {osType.split(' ')[0]} di datastore.</span>
+                        <span>Tidak ditemukan file ISO khusus <strong>{osType}</strong> di datastore storage.</span>
                       ) : (
-                        <span>VM akan dibuat dengan virtual disk kosong tanpa installer CD-ROM.</span>
+                        <span>VM akan dibuat dengan virtual disk kosong tanpa installer CD-ROM (PXE Boot).</span>
                       )}
                     </div>
                   )}
@@ -1336,7 +1358,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                         textDecoration: 'underline'
                       }}
                     >
-                      {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType.split(' ')[0]} (${filteredIsoList.length})`}
+                      {filterByOS ? `Tampilkan Semua ISO (${isoList.length})` : `Filter Khusus ${osType} (${filteredIsoList.length})`}
                     </button>
                   )}
                 </div>
@@ -1352,10 +1374,16 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                 marginTop: '16px'
               }}>
                 <div style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Rekomendasi Konfigurasi Sistem Operasi:
+                  Rekomendasi Konfigurasi Sistem Operasi ({osType}):
                 </div>
                 <div style={{ color: 'var(--text-muted)', lineHeight: '1.4' }}>
-                  Untuk sistem operasi Linux modern (Ubuntu/Debian), hypervisor akan otomatis mengoptimalkan kernel flags, ACPI virtualization, dan socket KVM paravirtualization (VirtIO SCSI).
+                  {osType === 'Windows Server' ? (
+                    'Untuk Windows Server, pastikan ISO VirtIO driver terpasang untuk disk bus SCSI dan adapter jaringan vmbr.'
+                  ) : osType === 'Alpine Linux' ? (
+                    'Untuk Alpine Linux (musl/busybox), konfigurasi minimalis dengan serial console dan VirtIO SCSI sangat disarankan.'
+                  ) : (
+                    `Untuk sistem operasi Linux modern (${osType}), hypervisor akan otomatis mengoptimalkan kernel flags, ACPI virtualization, dan socket KVM paravirtualization (VirtIO SCSI).`
+                  )}
                 </div>
               </div>
             </div>
@@ -1599,9 +1627,23 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', gap: '10px' }}>
                     <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Sistem Operasi:</span>
                     <div>
-                      <strong style={{ color: 'var(--text-main)' }}>{osType}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong style={{ color: 'var(--text-main)' }}>{osType}</strong>
+                        {selectedIsoObj && extractIsoVersion(selectedIsoObj.filename) && (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontWeight: 700
+                          }}>
+                            Versi {extractIsoVersion(selectedIsoObj.filename)}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: '0.76rem', color: selectedIso ? '#059669' : 'var(--text-muted)', marginTop: '2px' }}>
-                        {selectedIso ? `CD-ROM Boot Media: ${selectedIso}` : 'Tanpa ISO (Blank Boot Disk)'}
+                        {selectedIso ? `CD-ROM Boot Media: ${selectedIsoObj?.filename || selectedIso}` : 'Tanpa ISO (Blank Boot Disk)'}
                       </div>
                     </div>
                   </div>

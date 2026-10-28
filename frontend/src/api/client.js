@@ -56,12 +56,21 @@ class ApiClient {
         throw new Error('Session expired or unauthorized. Please log in again.');
       }
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error ${response.status}`);
+      let data = null;
+      const text = await response.text();
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { error: text };
+        }
       }
 
-      return data;
+      if (!response.ok) {
+        throw new Error(data?.error || `HTTP error ${response.status}`);
+      }
+
+      return data || {};
     } catch (err) {
       console.error(`API Error on [${options.method || 'GET'} ${endpoint}]:`, err);
       throw err;

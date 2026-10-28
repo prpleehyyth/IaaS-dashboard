@@ -63,8 +63,9 @@ export default function App() {
 
       setSummary(sumData);
       setClusters(isAdmin ? (clusterData || []) : []);
-      if (!isAdmin && activeTab === 'clusters') {
+      if (!isAdmin && (['clusters', 'users', 'pricing'].includes(activeTab) || selectedClusterId)) {
         setActiveTab('overview');
+        setSelectedClusterId(null);
       }
       
       const seenVMs = new Set();
@@ -143,10 +144,21 @@ export default function App() {
     try {
       const resp = await api.login(targetRole, targetPass);
       setUser(resp.user);
+
+      // Redirect balik ke halaman overview & bersihkan sub-view / modal aktif
+      setActiveTab('overview');
+      setSelectedVMId(null);
+      setSelectedClusterId(null);
+      setIsCreateModalOpen(false);
+      setEditingVM(null);
+      setConsoleVM(null);
+      setRebuildVM(null);
+      setResourceVM(null);
+
       await loadData();
-      showToast(`Switched active session to: ${resp.user.role}`);
+      showToast(`Mode dialihkan ke: ${resp.user.role === 'ADMIN' ? 'Administrator' : 'Operator'}`);
     } catch (err) {
-      showToast("Failed to switch role: " + err.message, 'error');
+      showToast("Gagal berganti mode: " + err.message, 'error');
     }
   };
 

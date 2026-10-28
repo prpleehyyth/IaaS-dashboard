@@ -41,7 +41,7 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
 		                COALESCE(v.mac_address, '') as mac_address,
-		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
 		                v.created_by, v.created_at, v.updated_at,
@@ -58,7 +58,7 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
 		                COALESCE(v.mac_address, '') as mac_address,
-		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
 		                v.created_by, v.created_at, v.updated_at,
@@ -85,7 +85,7 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -112,7 +112,7 @@ func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualM
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -136,7 +136,7 @@ func (s *VMService) GetAnyActiveVM(ctx context.Context) (*models.VirtualMachine,
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -329,18 +329,11 @@ func (s *VMService) ExecutePowerAction(ctx context.Context, vmID, userID, tenant
 		return nil, err
 	}
 
-	// Operators can manage explicitly assigned VMs or VMs belonging to their tenant
+	// Operators can ONLY manage explicitly assigned VMs
 	if role == models.RoleOperator {
-		var isAssigned int
-		_ = s.db.GetContext(ctx, &isAssigned, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1`, userID)
-		if isAssigned > 0 {
-			var hasAccess int
-			_ = s.db.GetContext(ctx, &hasAccess, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
-			if hasAccess == 0 {
-				return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
-			}
-		} else if vm.TenantID != tenantID {
-			return nil, errors.New("access denied: this virtual machine belongs to another organization")
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
 		}
 	}
 
@@ -427,17 +420,11 @@ func (s *VMService) RebuildVM(ctx context.Context, vmID, userID, tenantID uuid.U
 		return nil, err
 	}
 
+	// Operators can ONLY rebuild explicitly assigned VMs
 	if role == models.RoleOperator {
-		var isAssigned int
-		_ = s.db.GetContext(ctx, &isAssigned, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1`, userID)
-		if isAssigned > 0 {
-			var hasAccess int
-			_ = s.db.GetContext(ctx, &hasAccess, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
-			if hasAccess == 0 {
-				return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
-			}
-		} else if vm.TenantID != tenantID {
-			return nil, errors.New("access denied: cannot rebuild virtual machine of another organization")
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
 		}
 	}
 
@@ -626,5 +613,12 @@ func (s *VMService) GetAuditLogs(ctx context.Context, userID uuid.UUID, role mod
 		Limit:      limit,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// CheckOperatorVMAccess checks whether an operator has been explicitly assigned to manage a specific VM
+func (s *VMService) CheckOperatorVMAccess(ctx context.Context, userID, vmID uuid.UUID) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
+	return count > 0, err
 }
 

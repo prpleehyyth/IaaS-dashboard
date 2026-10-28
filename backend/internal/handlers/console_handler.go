@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"iaas-dashboard/internal/database"
@@ -19,7 +18,19 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all frontend origins in private cloud
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // Non-browser clients
+		}
+		host := r.Host
+		if strings.Contains(origin, host) ||
+			strings.Contains(origin, "localhost") ||
+			strings.Contains(origin, "127.0.0.1") ||
+			strings.Contains(origin, "pal.co.id") {
+			return true
+		}
+		log.Printf("[Security] Rejected cross-origin WebSocket connection from: %s (Host: %s)", origin, host)
+		return false
 	},
 }
 
@@ -27,13 +38,15 @@ type ConsoleHandler struct {
 	consoleService *services.ConsoleService
 	vmService      *services.VMService
 	redis          *database.RedisClient
+	jwtSecret      string
 }
 
-func NewConsoleHandler(consoleService *services.ConsoleService, vmService *services.VMService, redis *database.RedisClient) *ConsoleHandler {
+func NewConsoleHandler(consoleService *services.ConsoleService, vmService *services.VMService, redis *database.RedisClient, jwtSecret string) *ConsoleHandler {
 	return &ConsoleHandler{
 		consoleService: consoleService,
 		vmService:      vmService,
 		redis:          redis,
+		jwtSecret:      jwtSecret,
 	}
 }
 
@@ -61,40 +74,55 @@ func (h *ConsoleHandler) RequestConsoleSession(c *gin.Context) {
 func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 	idStr := c.Param("id")
 	ticket := c.Query("ticket")
-
-	var vm *models.VirtualMachine
-	var err error
-
-	// 1. Try resolving VM by UUID from path parameter
-	if idStr != "" && idStr != "console" {
-		if vmID, parseErr := uuid.Parse(idStr); parseErr == nil {
-			vm, err = h.vmService.GetVMByID(c.Request.Context(), vmID)
+	tokenParam := c.Query("token")
+	if tokenParam == "" {
+		authHeader := c.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenParam = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 	}
 
-	// 2. If not found or idStr was an integer VMID (e.g. 103), resolve by VMID
-	if vm == nil && idStr != "" && idStr != "console" {
-		if vmid, intErr := strconv.Atoi(idStr); intErr == nil {
-			vm, _ = h.vmService.GetVMByVMID(c.Request.Context(), vmid)
-		}
-	}
+	var targetVMID uuid.UUID
+	var isAuthorized bool
 
-	// 3. If still not found and ticket is provided, try resolving from Redis ticket cache
-	if vm == nil && ticket != "" && h.redis != nil {
+	// 1. Authenticate via one-time session ticket stored in Redis
+	if ticket != "" && h.redis != nil {
 		cachedVMID, redisErr := h.redis.ValidateTicket(c.Request.Context(), ticket)
 		if redisErr == nil && cachedVMID != "" {
 			if parsedUUID, parseErr := uuid.Parse(cachedVMID); parseErr == nil {
-				vm, _ = h.vmService.GetVMByID(c.Request.Context(), parsedUUID)
+				targetVMID = parsedUUID
+				isAuthorized = true
 			}
 		}
 	}
 
-	// 4. Fallback: if idStr is empty or "console", find the primary active VM
-	if vm == nil {
-		vm, _ = h.vmService.GetAnyActiveVM(c.Request.Context())
+	// 2. Alternatively authenticate via JWT token query param or Bearer header
+	if !isAuthorized && tokenParam != "" && h.jwtSecret != "" {
+		claims, err := middleware.ValidateTokenString(tokenParam, h.jwtSecret)
+		if err == nil && claims != nil {
+			if parsedUUID, parseErr := uuid.Parse(idStr); parseErr == nil {
+				targetVMID = parsedUUID
+				// If role is OPERATOR, verify explicit assignment
+				if claims.Role == models.RoleOperator {
+					hasAccess, accessErr := h.vmService.CheckOperatorVMAccess(c.Request.Context(), claims.UserID, targetVMID)
+					if accessErr == nil && hasAccess {
+						isAuthorized = true
+					}
+				} else {
+					isAuthorized = true
+				}
+			}
+		}
 	}
 
-	if vm == nil {
+	// Reject unauthenticated or unauthorized WebSocket connections
+	if !isAuthorized {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: valid console session ticket or token is required"})
+		return
+	}
+
+	vm, err := h.vmService.GetVMByID(c.Request.Context(), targetVMID)
+	if err != nil || vm == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Virtual machine not found for console session"})
 		return
 	}

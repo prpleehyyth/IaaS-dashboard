@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
 
 	"iaas-dashboard/internal/models"
@@ -43,25 +42,8 @@ func (s *AuthService) Authenticate(ctx context.Context, username, password strin
 		return nil, errors.New("user account is inactive or disabled")
 	}
 
-	// Verify password
-	// Allow known default seed passwords or bcrypt match
-	isMatch := false
-	lowerU := strings.ToLower(strings.TrimSpace(user.Username))
-	if (lowerU == "admin" && password == "admin123") ||
-		(lowerU == "operator" && password == "operator123") ||
-		(lowerU == "devops-lead" && password == "devops123") ||
-		(lowerU == "db-admin" && password == "dbadmin123") ||
-		(lowerU == "frontend-dev" && password == "frontend123") ||
-		(lowerU == "sandbox-user" && password == "sandbox123") {
-		isMatch = true
-	} else {
-		err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-		if err == nil {
-			isMatch = true
-		}
-	}
-
-	if !isMatch {
+	// Verify password strictly using bcrypt hash
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
 
