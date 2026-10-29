@@ -15,24 +15,48 @@ Sistem ini telah dikonfigurasi dalam mode **DEVELOPMENT (Virgin State)**:
 
 ---
 
-## 👥 Kredensial Akun Default (Superadmin)
+## 👥 Hak Akses & Peran Pengguna (Role-Based Access Control)
 
-| Username | Password | Role | Scope Akses | Deskripsi |
-| :--- | :--- | :--- | :--- | :--- |
-| `admin` | `admin123` | **ADMIN** | **Global Access** | **Cloud Administrator**: Hak penuh mendaftarkan cluster, menambah node fisik, membuat VM, manajemen user & kuota tenant. |
+| Peran (Role) | Hak Akses & Fitur | Keterangan |
+| :--- | :--- | :--- |
+| **Administrator (`ADMIN`)** | • Manajemen penuh siklus hidup VM (Create, Edit Specs, Power Action, Delete, Rebuild OS)<br>• Manajemen klaster hypervisor & node komputasi fisik<br>• Manajemen pengguna & penugasan akses VM granular<br>• Konfigurasi tarif katalog & melihat laporan billing / metering armada | Akses kontrol global untuk pengelola infrastruktur private cloud. |
+| **VM Operator (`OPERATOR`)** | • Manajemen daya VM yang ditugaskan (Start, Stop, Restart)<br>• Reinstall / Rebuild sistem operasi VM yang ditugaskan<br>• Akses In-Browser Remote Console (Web Shell & NoVNC)<br>• Melihat riwayat audit aktivitas VM miliknya | Dibatasi khusus pada VM yang ditugaskan secara eksplisit oleh Admin. **Fitur dan laporan billing ditiadakan** untuk akun Operator. |
 
 ---
 
-## 🌐 Dynamic Cluster & Node Management (Fitur Baru)
+## 🔐 Keamanan & Proteksi Data (Security Hardening)
 
-Pada mode development virgin ini, Anda dapat mendaftarkan cluster fisik Anda sendiri langsung dari UI:
+Platform ini telah melalui audit dan penguatan keamanan menyeluruh (*security hardening*):
+
+1. **Enkripsi Kredensial At-Rest & Redaksi API (`CWE-312`, `CWE-200`)**:
+   - Token Secret Proxmox dan Password Administrator vCenter dienkripsi menggunakan algoritma **AES-256-GCM** dengan prefix `enc:v1:` sebelum disimpan di database PostgreSQL.
+   - Field `auth_secret` dikecualikan secara ketat dari seluruh serialisasi JSON (`json:"-"`), mencegah kebocoran kredensial ke frontend/browser.
+2. **Mitigasi SSRF & Sanitasi Path Hypervisor (`CWE-918`, `CWE-20`)**:
+   - Validasi ketat pada endpoint cluster yang memblokir IP metadata cloud (`169.254.0.0/16`, `metadata.google.internal`), interface loopback (`127.0.0.0/8`), hostname container internal (`redis`, `postgres`, `backend`), dan port sensitif.
+   - Sanitasi ID node dan storage menggunakan `url.PathEscape` sebelum diinterpolasi ke path REST API hypervisor.
+3. **CORS Terbatas & Perlindungan WebSocket Hijacking (`CWE-942`, `CWE-346`)**:
+   - Kebijakan CORS memvalidasi origin menggunakan URL parser presisi terhadap allowlist domain sah, menolak serangan *substring domain spoofing*.
+   - Tiket sesi remote console dikonsumsi secara atomik (*single-use*) menggunakan `GetDel` di Redis dan memverifikasi kecocokan UUID VM target.
+4. **Proteksi Sesi JWT & Rate Limiting (`CWE-613`, `CWE-307`)**:
+   - Penghapusan token autentikasi dari query string pada REST endpoint untuk mencegah kebocoran token di log HTTP.
+   - Mekanisme revokasi sesi pengguna secara langsung di Redis saat akun pengguna dihapus.
+   - Rate limiting pada endpoint login (maksimal 10 percobaan/menit per IP) dengan proteksi batas kapasitas memori.
+5. **Hardening Container & Web Server (`CWE-250`, `CWE-693`)**:
+   - Binary backend Go dijalankan sebagai user non-root (`appuser`, UID 10001) di dalam container Alpine.
+   - Nginx menyematkan HTTP Security Headers standar: `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, dan `Permissions-Policy`.
+
+---
+
+## 🌐 Dynamic Cluster & Node Management
+
+Pada mode development virgin ini, Anda dapat mendaftarkan cluster fisik Anda sendiri langsung dari antarmuka:
 1. **Connect Cluster**: Buka tab **"Clusters"**, klik tombol **"+ Connect Cluster"**, pilih tipe (`PROXMOX` atau `VMWARE`), masukkan URL endpoint (misal `https://192.168.1.100:8006`).
 2. **Add Compute Node**: Di dalam kartu cluster yang telah didaftarkan, klik tombol **"+ Add Node"** untuk mendaftarkan host fisik (IP, CPU Cores, RAM GB, Disk GB).
-3. **Reset to Virgin**: Terdapat tombol **"Reset to Virgin"** jika sewaktu-waktu Anda ingin mengosongkan kembali seluruh data dummy ke keadaan bersih.
+3. **Reset to Virgin**: Terdapat tombol **"Reset to Virgin"** jika sewaktu-waktu Anda ingin mengosongkan kembali seluruh data dummy ke keadaan bersih (dinonaktifkan secara otomatis pada mode `PRODUCTION`).
 
 ---
 
-## 🔐 Manajemen User & Granular VM Assignment (Admin Feature)
+## 🔐 Manajemen User & Granular VM Assignment (Admin Only)
 
 Sebagai Administrator (`admin`), Anda dapat:
 1. **Melihat Daftar User**: Navigasi ke tab **"Users & VM Access"** di navbar atas.
@@ -41,59 +65,71 @@ Sebagai Administrator (`admin`), Anda dapat:
    - Pada baris user target (misal `operator` atau user baru), klik tombol **"Assign VMs"**.
    - Modal interaktif akan menampilkan seluruh VM yang tersedia dengan checkbox.
    - Centang atau hapus centang VM yang diizinkan, lalu klik **"Save Assignments"**.
-   - Perubahan langsung aktif seketika (real-time enforcement di database & backend API).
+   - Perubahan langsung aktif seketika (*real-time enforcement* di database & backend API).
 
 ---
 
-## 🚀 Key Features
+## 💰 Resource Metering & Multi-Tier Billing (Admin Only)
 
-- **Hybrid Hypervisor Abstraction**: Unified Go driver interface (`HypervisorDriver`) yang mengendalikan VMware vSphere (via `govmomi`) dan Proxmox VE (via REST API).
-- **Fleet Scale (12 Physical Nodes / 4 Clusters)**:
-  - `vmware-prod-01`: Compute Cluster (3 nodes: `esxi-01a`, `esxi-01b`, `esxi-01c`)
-  - `vmware-prod-02`: Database Cluster (3 nodes: `esxi-02a`, `esxi-02b`, `esxi-02c`)
-  - `vmware-prod-03`: DMZ & Web Cluster (3 nodes: `esxi-03a`, `esxi-03b`, `esxi-03c`)
-  - `proxmox-prod-01`: Proxmox VE 8 Cluster (3 nodes: `pve-node-01`, `pve-node-02`, `pve-node-03`)
-- **Role-Based Access Control (RBAC)**:
-  - **Administrator (`ADMIN`)**: Siklus penuh VM (create, edit vCPU/RAM/Disk, start, stop, delete VM), manajemen kuota tenant, manajemen user & penugasan VM.
-  - **VM Operator (`OPERATOR`)**: Dibatasi hanya pada VM yang ditugaskan (Start, Stop, dan In-Browser Remote Console).
+Modul penagihan dan telemetri sumber daya yang dirancang khusus untuk administrator:
+- **Konfigurasi Tarif (Atur Tarif)**: Pengaturan tarif per jam (vCPU, RAM, Storage, Network) serta komponen bulanan (Virtualisasi, Manajemen, Bandwidth) berdasarkan tingkatan (Tier 1, Tier 2, Tier 3).
+- **Laporan Billing Real-Time**: Rekapitulasi biaya komputasi armada per VM dengan perhitungan jam operasional bulanan (730 jam).
+- **Ekspor Laporan**: Fitur ekspor rincian biaya VM ke format spreadsheet CSV.
+
+---
+
+## 🚀 Fitur Utama Lainnya
+
+- **Hybrid Hypervisor Abstraction**: Antarmuka driver Go terpadu (`HypervisorDriver`) yang mengendalikan VMware vSphere (via REST API vCenter) dan Proxmox VE (via REST API Proxmox).
 - **In-Browser Remote VM Console**:
-  - WebSocket tunnel yang mem-proxy sesi VNC/guest console interaktif langsung di browser dengan kontrol Ctrl+Alt+Del dan status koneksi live.
-- **Resource Metering & Billing Readiness**:
-  - Background telemetry loop yang mencatat sampel vCPU cores, RAM MB, dan disk GB per tenant ke tabel `resource_metering_samples`.
-  - Siap diintegrasikan dengan modul Billing Plan.
+  - WebSocket tunnel yang mem-proxy sesi VNC/guest console interaktif langsung di browser dengan kontrol Ctrl+Alt+Del, quick commands, dan status koneksi live.
+- **Dukungan NoVNC**: Integrasi tautan monitor grafis langsung ke antarmuka NoVNC Proxmox VE untuk instalasi OS via ISO.
 
 ---
 
-## ⚙️ Hypervisor Mode & Kredensial (.env)
+## ⚙️ Konfigurasi Lingkungan (.env)
 
-Konfigurasi koneksi cluster dikendalikan via file `.env`:
+Konfigurasi sistem dikendalikan via file `.env` (file `.env` dikecualikan dari Git demi keamanan):
 
 ```ini
-# Pilihan Mode: SIMULATOR (mock data untuk dev/testing) atau PRODUCTION (hardware riil)
-HYPERVISOR_MODE=SIMULATOR
+# Pilihan Mode: DEVELOPMENT (lab testing), SIMULATOR (mock data), atau PRODUCTION (hardware fisik riil)
+HYPERVISOR_MODE=DEVELOPMENT
 
-# --- PROXMOX VE 8 CREDENTIALS ---
-PROXMOX_ENDPOINT=https://pve-cluster.infra.cloud.local:8006
-PROXMOX_NODE=pve-node-01
-PROXMOX_TOKEN_ID=root@pam!iaas_token
+# --- KUNCI KEAMANAN & ENKRIPSI ---
+JWT_SECRET=super-secret-iaas-private-cloud-key-32chars-min
+MASTER_ENCRYPTION_KEY=super-secret-iaas-private-cloud-key-32chars-min
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://pal.co.id
+
+# --- DATABASE & CACHE ---
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=iaas_db
+DATABASE_URL=postgres://postgres:postgres@postgres:5432/iaas_db?sslmode=disable
+REDIS_ADDR=redis:6379
+REDIS_PASSWORD=
+PORT=8080
+
+# --- KREDENSIAL PROXMOX VE ---
+PROXMOX_ENDPOINT=https://192.168.10.100:8006
+PROXMOX_TOKEN_ID=root@pam!iaas_controller
 PROXMOX_TOKEN_SECRET=your-proxmox-token-uuid-here
-PROXMOX_VERIFY_SSL=false
+PROXMOX_INSECURE_SSL=true
 
-# --- VMWARE VSPHERE CREDENTIALS ---
-VMWARE_VCENTER_URL=https://vcenter-01.infra.cloud.local/sdk
-VMWARE_USERNAME=administrator@vsphere.local
-VMWARE_PASSWORD=YourSecureVcenterPasswordHere!
-VMWARE_INSECURE_SSL=true
+# --- KREDENSIAL VMWARE VCENTER ---
+VCENTER_HOST=192.168.10.50
+VCENTER_USER=administrator@vsphere.local
+VCENTER_PASSWORD=YourVcenterPassword123!
+VCENTER_INSECURE_SSL=true
+VCENTER_DATACENTER=Datacenter-01
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Go 1.22 + Gin Framework
-- **Database**: PostgreSQL 16 (dengan seeder 4 cluster, 12 node, 12 VM, dan 6 user ter-assign)
-- **Cache & Distributed Locks**: Redis 7
-- **Frontend**: React 18 + Vite + Tailwind/Glassmorphism CSS + Lucide Icons + Nginx
+- **Backend**: Go 1.22 + Gin Framework + gorilla/websocket + sqlx + go-redis
+- **Database**: PostgreSQL 16 + Redis 7
+- **Frontend**: React 18 + Vite + Tailwind/Glassmorphism CSS + Lucide Icons + Nginx Alpine
 - **Orchestration**: Docker Compose
 
 ---
@@ -111,4 +147,3 @@ docker compose up --build -d
 - **Backend API Health Check**: [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health)
 - **PostgreSQL**: `localhost:5432` (`postgres` / `postgres` - Database: `iaas_db`)
 - **Redis**: `localhost:6379`
-
