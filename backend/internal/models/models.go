@@ -94,7 +94,7 @@ type Cluster struct {
 	Datacenter     string         `json:"datacenter" db:"datacenter"`
 	Endpoint       string         `json:"endpoint" db:"endpoint"`
 	AuthUser       string         `json:"auth_user,omitempty" db:"auth_user"`
-	AuthSecret     string         `json:"auth_secret,omitempty" db:"auth_secret"`
+	AuthSecret     string         `json:"-" db:"auth_secret"`
 	InsecureSSL    bool           `json:"insecure_ssl" db:"insecure_ssl"`
 	Version        string         `json:"version,omitempty" db:"version"`
 	Status         string         `json:"status" db:"status"`
@@ -105,7 +105,7 @@ type Cluster struct {
 	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
 
 	// Relational attachments
-	Nodes []Node `json:"nodes,omitempty" db:"-"`
+	Nodes []Node           `json:"nodes,omitempty" db:"-"`
 	VMs   []VirtualMachine `json:"vms,omitempty" db:"-"`
 }
 
@@ -283,6 +283,7 @@ type CreateClusterRequest struct {
 }
 
 type TestClusterConnectionRequest struct {
+	ClusterID   string         `json:"cluster_id"`
 	Type        HypervisorType `json:"type" binding:"required"`
 	Endpoint    string         `json:"endpoint" binding:"required"`
 	AuthUser    string         `json:"auth_user"`

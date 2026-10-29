@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
+	"iaas-dashboard/internal/config"
 	"iaas-dashboard/internal/database"
 	"iaas-dashboard/internal/drivers"
 	"iaas-dashboard/internal/models"
@@ -121,6 +124,20 @@ func (s *ClusterService) EnsureSchema(ctx context.Context) {
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m)
 	}
+
+	// Encrypt any existing plaintext cluster auth_secret records at rest
+	var existing []struct {
+		ID         string `db:"id"`
+		AuthSecret string `db:"auth_secret"`
+	}
+	if err := s.db.SelectContext(ctx, &existing, `SELECT id, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE auth_secret != ''`); err == nil {
+		for _, c := range existing {
+			if !strings.HasPrefix(c.AuthSecret, config.EncryptedSecretPrefix) {
+				enc := config.EncryptSecret(c.AuthSecret, "")
+				_, _ = s.db.ExecContext(ctx, `UPDATE clusters SET auth_secret = $1 WHERE id = $2`, enc, c.ID)
+			}
+		}
+	}
 }
 
 func (s *ClusterService) GetAllClustersWithNodes(ctx context.Context) ([]models.Cluster, error) {
@@ -194,9 +211,13 @@ func (s *ClusterService) GetClusterByID(ctx context.Context, clusterID string) (
 
 func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClusterRequest) (*models.Cluster, error) {
 	s.EnsureSchema(ctx)
+	if err := validateHypervisorEndpoint(req.Endpoint); err != nil {
+		return nil, err
+	}
 	if req.ID == "" {
 		req.ID = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 	}
+	encryptedSecret := config.EncryptSecret(req.AuthSecret, "")
 	query := `
 		INSERT INTO clusters (id, name, type, datacenter, endpoint, auth_user, auth_secret, insecure_ssl, status, total_cpu_cores, total_ram_gb, total_storage_tb, description, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ONLINE', $9, $10, $11, $12, $13)
@@ -212,7 +233,7 @@ func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClu
 	var cluster models.Cluster
 	err := s.db.GetContext(ctx, &cluster, query,
 		req.ID, req.Name, req.Type, req.Datacenter, req.Endpoint,
-		req.AuthUser, req.AuthSecret, req.InsecureSSL,
+		req.AuthUser, encryptedSecret, req.InsecureSSL,
 		req.TotalCPUCores, req.TotalRAMGB, req.TotalStorageTB, req.Description, req.Version,
 	)
 	if err != nil {
@@ -299,24 +320,109 @@ func (s *ClusterService) DeleteNode(ctx context.Context, clusterID, nodeID strin
 	return nil
 }
 
-func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.TestClusterConnectionRequest) (*models.TestClusterConnectionResponse, error) {
-	endpointLower := strings.ToLower(strings.TrimSpace(req.Endpoint))
+func validateHypervisorEndpoint(rawEndpoint string) error {
+	trimmed := strings.TrimSpace(rawEndpoint)
+	endpointLower := strings.ToLower(trimmed)
 	if !strings.HasPrefix(endpointLower, "http://") && !strings.HasPrefix(endpointLower, "https://") {
-		return nil, errors.New("invalid endpoint protocol: must begin with http:// or https://")
-	}
-	// SSRF mitigation: block access to cloud metadata services
-	if strings.Contains(endpointLower, "169.254.169.254") || strings.Contains(endpointLower, "metadata.google.internal") {
-		return nil, errors.New("security violation: connection to cloud metadata services is forbidden")
+		return errors.New("invalid endpoint protocol: must begin with http:// or https://")
 	}
 
-	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, req.AuthUser, req.AuthSecret, req.InsecureSSL, req.Datacenter)
+	parsedURL, err := url.Parse(trimmed)
+	if err != nil || parsedURL.Hostname() == "" {
+		return errors.New("invalid endpoint URL format")
+	}
+
+	host := strings.ToLower(parsedURL.Hostname())
+	port := parsedURL.Port()
+
+	// Block cloud metadata services and internal infrastructure services
+	blockedHosts := map[string]bool{
+		"169.254.169.254":          true,
+		"metadata.google.internal": true,
+		"metadata":                 true,
+		"postgres":                 true,
+		"iaas-postgres":            true,
+		"redis":                    true,
+		"iaas-redis":               true,
+		"backend":                  true,
+		"iaas-backend":             true,
+		"frontend":                 true,
+		"iaas-frontend":            true,
+	}
+	if blockedHosts[host] {
+		return errors.New("security violation: connection to internal or cloud metadata services is forbidden")
+	}
+
+	// Block sensitive internal ports (PostgreSQL, Redis, API, SSH)
+	blockedPorts := map[string]bool{
+		"5432": true,
+		"6379": true,
+		"8080": true,
+		"22":   true,
+	}
+	if blockedPorts[port] {
+		return fmt.Errorf("security violation: connection to restricted internal service port %s is forbidden", port)
+	}
+
+	// Check IP literal or DNS resolution against link-local & loopback ranges (allow port 8989 for local lab simulator)
+	ips, err := net.LookupIP(host)
+	if err == nil {
+		for _, ip := range ips {
+			if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || strings.HasPrefix(ip.String(), "169.254.") {
+				return errors.New("security violation: connection to link-local / cloud metadata IP range is forbidden")
+			}
+			if ip.IsLoopback() && port != "8989" {
+				return errors.New("security violation: connection to loopback interface is forbidden")
+			}
+		}
+	} else if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return errors.New("security violation: connection to link-local IP range is forbidden")
+		}
+		if ip.IsLoopback() && port != "8989" {
+			return errors.New("security violation: connection to loopback interface is forbidden")
+		}
+	}
+
+	return nil
+}
+
+func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.TestClusterConnectionRequest) (*models.TestClusterConnectionResponse, error) {
+	if err := validateHypervisorEndpoint(req.Endpoint); err != nil {
+		return nil, err
+	}
+
+	authUser := req.AuthUser
+	authSecret := req.AuthSecret
+
+	// If secret was omitted (e.g. testing an already registered cluster from UI), load stored secret from DB
+	if authSecret == "" {
+		var stored struct {
+			AuthUser   string `db:"auth_user"`
+			AuthSecret string `db:"auth_secret"`
+		}
+		if req.ClusterID != "" {
+			_ = s.db.GetContext(ctx, &stored, `SELECT COALESCE(auth_user, '') as auth_user, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE id = $1 LIMIT 1`, req.ClusterID)
+		}
+		if stored.AuthSecret == "" && req.Endpoint != "" {
+			_ = s.db.GetContext(ctx, &stored, `SELECT COALESCE(auth_user, '') as auth_user, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE endpoint = $1 LIMIT 1`, req.Endpoint)
+		}
+		if stored.AuthSecret != "" {
+			authSecret = config.DecryptSecret(stored.AuthSecret, "")
+			if authUser == "" {
+				authUser = stored.AuthUser
+			}
+		}
+	}
+
+	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, authUser, authSecret, req.InsecureSSL, req.Datacenter)
 	testCluster := &models.Cluster{
 		ID:          "test-cluster",
 		Type:        req.Type,
 		Endpoint:    req.Endpoint,
 		Datacenter:  req.Datacenter,
-		AuthUser:    req.AuthUser,
-		AuthSecret:  req.AuthSecret,
+		AuthUser:    authUser,
+		AuthSecret:  authSecret,
 		InsecureSSL: req.InsecureSSL,
 	}
 	return driver.TestConnection(ctx, testCluster)
@@ -435,6 +541,11 @@ func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*mo
 }
 
 func (s *ClusterService) ResetToVirgin(ctx context.Context) error {
+	cfg := config.Load()
+	if strings.EqualFold(cfg.HypervisorMode, "PRODUCTION") {
+		return errors.New("security violation: ResetToVirgin is disabled in PRODUCTION mode")
+	}
+
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err

@@ -21,11 +21,15 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Final minimal runner stage
 FROM alpine:3.19
 
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata && \
+    adduser -D -u 10001 -g '' appuser
 
 WORKDIR /app
 
 COPY --from=builder /iaas-api /app/iaas-api
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8080
 

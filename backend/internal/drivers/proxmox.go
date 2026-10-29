@@ -274,8 +274,22 @@ func (p *ProxmoxDriver) DiscoverVMs(ctx context.Context, cluster *models.Cluster
 	return vms, nil
 }
 
+func sanitizePVEIdentifier(val, fallback string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return -1
+	}, strings.TrimSpace(val))
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return fallback
+	}
+	return url.PathEscape(cleaned)
+}
+
 func (p *ProxmoxDriver) RefreshNodeStats(ctx context.Context, cluster *models.Cluster, node *models.Node) (*models.Node, error) {
-	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/status", node.ID), nil)
+	safeNodeID := sanitizePVEIdentifier(node.ID, "pve")
+	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/status", safeNodeID), nil)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
 		var pveResp struct {
@@ -336,6 +350,7 @@ func (p *ProxmoxDriver) getNextVMID(ctx context.Context) (int, error) {
 }
 
 func (p *ProxmoxDriver) getAvailableStorage(ctx context.Context, nodeName string) string {
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
 	if err == nil {
 		defer resp.Body.Close()
@@ -379,6 +394,7 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// 1. Get next available VMID directly from Proxmox
 	vmid, err := p.getNextVMID(ctx)
@@ -505,6 +521,7 @@ func (p *ProxmoxDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Clust
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	formData := url.Values{}
 	if req.CPUCores > 0 {
@@ -553,6 +570,7 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// Try QEMU delete with purge flag
 	resp, err := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/qemu/%d?purge=1&destroy-unreferenced-disks=1", nodeName, vmid), nil)
@@ -581,6 +599,7 @@ func (p *ProxmoxDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, 
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// 1. Ensure VM is stopped before reconfiguring boot media
 	_ = p.StopVM(ctx, cluster, node, vmid, true)
@@ -637,6 +656,7 @@ func (p *ProxmoxDriver) GetVMTelemetry(ctx context.Context, cluster *models.Clus
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	if vm == nil {
 		return &models.VMTelemetry{}, nil
@@ -861,6 +881,7 @@ func (p *ProxmoxDriver) GetConsoleTicket(ctx context.Context, cluster *models.Cl
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// Auto-detect real node from /cluster/resources if available
 	respRes, errRes := p.doRequest(ctx, http.MethodGet, "/cluster/resources?type=vm", nil)
@@ -913,6 +934,7 @@ func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, n
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// 1. Find all active storages that support ISOs on this node
 	storagesResp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
@@ -929,7 +951,7 @@ func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, n
 		if err := json.NewDecoder(storagesResp.Body).Decode(&sData); err == nil {
 			for _, st := range sData.Data {
 				if strings.Contains(st.Content, "iso") {
-					isoStorages = append(isoStorages, st.Storage)
+					isoStorages = append(isoStorages, sanitizePVEIdentifier(st.Storage, "local"))
 				}
 			}
 		}

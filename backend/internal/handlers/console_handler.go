@@ -3,7 +3,9 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"iaas-dashboard/internal/database"
@@ -18,18 +20,36 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		if origin == "" {
 			return true // Non-browser clients
 		}
-		host := r.Host
-		if strings.Contains(origin, host) ||
-			strings.Contains(origin, "localhost") ||
-			strings.Contains(origin, "127.0.0.1") ||
-			strings.Contains(origin, "pal.co.id") {
+		parsedOrigin, err := url.Parse(origin)
+		if err != nil || (parsedOrigin.Scheme != "http" && parsedOrigin.Scheme != "https") {
+			log.Printf("[Security] Rejected malformed WebSocket Origin: %s", origin)
+			return false
+		}
+		originHost := strings.ToLower(parsedOrigin.Hostname())
+		reqHost := strings.ToLower(r.Host)
+		if h, _, err := net.SplitHostPort(reqHost); err == nil {
+			reqHost = h
+		}
+
+		if originHost == reqHost ||
+			originHost == "localhost" ||
+			originHost == "127.0.0.1" ||
+			originHost == "::1" ||
+			originHost == "pal.co.id" ||
+			strings.HasSuffix(originHost, ".pal.co.id") {
 			return true
 		}
-		log.Printf("[Security] Rejected cross-origin WebSocket connection from: %s (Host: %s)", origin, host)
+
+		// Also allow RFC1918 private LAN origins when accessed over internal network
+		if ip := net.ParseIP(originHost); ip != nil && ip.IsPrivate() {
+			return true
+		}
+
+		log.Printf("[Security] Rejected cross-origin WebSocket connection from: %s (Host: %s)", origin, r.Host)
 		return false
 	},
 }
@@ -90,8 +110,13 @@ func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 		cachedVMID, redisErr := h.redis.ValidateTicket(c.Request.Context(), ticket)
 		if redisErr == nil && cachedVMID != "" {
 			if parsedUUID, parseErr := uuid.Parse(cachedVMID); parseErr == nil {
-				targetVMID = parsedUUID
-				isAuthorized = true
+				// Verify URL parameter matches the VM authorized by the ticket
+				if reqUUID, reqErr := uuid.Parse(idStr); reqErr != nil || reqUUID == parsedUUID {
+					targetVMID = parsedUUID
+					isAuthorized = true
+				} else {
+					log.Printf("[Security] Console ticket VM mismatch: ticket for %s used on %s", parsedUUID, reqUUID)
+				}
 			}
 		}
 	}

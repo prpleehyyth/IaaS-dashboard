@@ -55,14 +55,33 @@ func (r *RedisClient) SetTicket(ctx context.Context, ticket string, vmID string,
 	return r.Client.Set(ctx, key, vmID, ttl).Err()
 }
 
-// ValidateTicket verifies and consumes the ticket
+// ValidateTicket verifies and atomically consumes the one-time ticket
 func (r *RedisClient) ValidateTicket(ctx context.Context, ticket string) (string, error) {
 	key := fmt.Sprintf("vnc_ticket:%s", ticket)
-	vmID, err := r.Client.Get(ctx, key).Result()
+	vmID, err := r.Client.GetDel(ctx, key).Result()
 	if err != nil {
-		return "", err
+		// Fallback for older Redis versions if GetDel is unsupported
+		vmID, err = r.Client.Get(ctx, key).Result()
+		if err != nil {
+			return "", err
+		}
+		r.Client.Del(ctx, key)
 	}
-	// Ticket is single-use: expire after 10s or delete
-	r.Client.Expire(ctx, key, 10*time.Second)
 	return vmID, nil
+}
+
+// RevokeUserTokens marks a user ID as revoked in Redis for the duration of active JWT lifetime
+func (r *RedisClient) RevokeUserTokens(ctx context.Context, userID string, ttl time.Duration) error {
+	key := fmt.Sprintf("revoked_user:%s", userID)
+	return r.Client.Set(ctx, key, "revoked", ttl).Err()
+}
+
+// IsUserRevoked checks whether a user's tokens have been revoked
+func (r *RedisClient) IsUserRevoked(ctx context.Context, userID string) bool {
+	if r == nil || r.Client == nil {
+		return false
+	}
+	key := fmt.Sprintf("revoked_user:%s", userID)
+	val, err := r.Client.Exists(ctx, key).Result()
+	return err == nil && val > 0
 }

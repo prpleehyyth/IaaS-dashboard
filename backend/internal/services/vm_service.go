@@ -481,16 +481,12 @@ func (s *VMService) GetVMTelemetry(ctx context.Context, vmID, userID, tenantID u
 	}
 
 	if role == models.RoleOperator {
-		var isAssigned int
-		_ = s.db.GetContext(ctx, &isAssigned, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1`, userID)
-		if isAssigned > 0 {
-			var hasAccess int
-			_ = s.db.GetContext(ctx, &hasAccess, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
-			if hasAccess == 0 {
-				return nil, errors.New("access denied: this virtual machine is not assigned to your account")
-			}
-		} else if vm.TenantID != tenantID {
+		if vm.TenantID != tenantID {
 			return nil, errors.New("access denied: cannot access VM telemetry of another organization")
+		}
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, errors.New("access denied: this virtual machine is not assigned to your account")
 		}
 	}
 

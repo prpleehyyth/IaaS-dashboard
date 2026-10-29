@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/config"
@@ -44,7 +47,7 @@ func main() {
 	vmService := services.NewVMService(db, redisClient, driverFactory)
 	consoleService := services.NewConsoleService(db, redisClient, driverFactory, vmService)
 	meteringService := services.NewMeteringService(db)
-	userService := services.NewUserService(db)
+	userService := services.NewUserService(db, redisClient)
 
 	// 4. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -55,19 +58,20 @@ func main() {
 	meteringHandler := handlers.NewMeteringHandler(meteringService)
 	userHandler := handlers.NewUserHandler(userService)
 
-	// Rate limiter for authentication (max 30 login attempts per minute per IP)
-	loginLimiter := middleware.NewLoginRateLimiter(30, 1*time.Minute)
+	// Rate limiter for authentication (max 10 login attempts per minute per IP)
+	loginLimiter := middleware.NewLoginRateLimiter(10, 1*time.Minute)
 
 	// 5. Background Metering Worker (records periodic usage snapshots for billing readiness)
 	go startMeteringWorker(db)
 
 	// 6. Router Setup
 	r := gin.Default()
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 
-	// CORS configuration (Dynamic origin reflection with credentials support)
+	// CORS configuration (Restricted origin validation with credentials support)
 	r.Use(cors.New(cors.Config{
 		AllowOriginFunc: func(origin string) bool {
-			return true
+			return isAllowedCORSOrigin(origin, cfg.CORSAllowedOrigins)
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
@@ -91,7 +95,7 @@ func main() {
 
 	// Authenticated Routes
 	api := r.Group("/api/v1")
-	api.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	api.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	{
 		api.GET("/auth/me", authHandler.GetCurrentUser)
 
@@ -154,6 +158,30 @@ func main() {
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
+}
+
+func isAllowedCORSOrigin(origin string, allowedOrigins []string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range allowedOrigins {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "pal.co.id" || strings.HasSuffix(host, ".pal.co.id") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsPrivate() {
+		return true
+	}
+	return false
 }
 
 func startMeteringWorker(db database.DBOrTx) {

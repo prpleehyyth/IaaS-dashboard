@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -50,8 +51,11 @@ func NewVMwareDriver(host, user, password string, insecureSSL bool, datacenter s
 }
 
 func isLabOrMock(host string) bool {
+	if strings.EqualFold(os.Getenv("HYPERVISOR_MODE"), "PRODUCTION") {
+		return false
+	}
 	h := strings.ToLower(host)
-	return strings.Contains(h, "8989") || strings.Contains(h, "mock") || strings.Contains(h, "simulator") || strings.Contains(h, "demo") || strings.Contains(h, "sim")
+	return strings.Contains(h, ":8989") || strings.HasPrefix(h, "https://mock.") || strings.HasPrefix(h, "http://mock.") || strings.HasPrefix(h, "https://simulator.")
 }
 
 func (v *VMwareDriver) getSession(ctx context.Context) (string, error) {

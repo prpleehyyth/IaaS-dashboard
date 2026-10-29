@@ -45,6 +45,8 @@ func NewLoginRateLimiter(limit int, window time.Duration) *LoginRateLimiter {
 	return limiter
 }
 
+const maxTrackedIPs = 10000
+
 func (l *LoginRateLimiter) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		clientIP := c.ClientIP()
@@ -53,6 +55,22 @@ func (l *LoginRateLimiter) Middleware() gin.HandlerFunc {
 		l.mu.Lock()
 		att, exists := l.attempts[clientIP]
 		if !exists || now.Sub(att.lastReset) > l.window {
+			// Prevent unbounded map growth under spoofed IP floods
+			if !exists && len(l.attempts) >= maxTrackedIPs {
+				for ip, oldAtt := range l.attempts {
+					if now.Sub(oldAtt.lastReset) > l.window {
+						delete(l.attempts, ip)
+					}
+				}
+				if len(l.attempts) >= maxTrackedIPs {
+					l.mu.Unlock()
+					c.JSON(http.StatusTooManyRequests, gin.H{
+						"error": "Server sedang sibuk. Silakan coba beberapa saat lagi.",
+					})
+					c.Abort()
+					return
+				}
+			}
 			l.attempts[clientIP] = &clientAttempt{
 				count:     1,
 				lastReset: now,

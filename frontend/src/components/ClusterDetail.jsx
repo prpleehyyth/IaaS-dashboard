@@ -97,10 +97,11 @@ export default function ClusterDetail({
     setTestResult(null);
     try {
       const res = await api.testClusterConnection({
+        cluster_id: cluster.id,
         type: cluster.type,
         endpoint: cluster.endpoint,
         auth_user: cluster.auth_user,
-        auth_secret: cluster.auth_secret,
+        auth_secret: cluster.auth_secret || '',
         insecure_ssl: cluster.insecure_ssl,
       });
       setTestResult(res);

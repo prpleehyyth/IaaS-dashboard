@@ -148,7 +148,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO users (id, tenant_id, username, email, password_hash, full_name, role, status)
 VALUES 
     ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'admin', 'admin@cloud.local', '$2b$12$ycqPEuN3oSj8j23Fftg2z.1JauHr423u.AiF9ZUJ5Aaz1H42Fg8cS', 'Cloud Administrator', 'ADMIN', 'ACTIVE')
-ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
+ON CONFLICT (id) DO NOTHING;
 
 -- 9. Billing Rates Configuration
 CREATE TABLE IF NOT EXISTS billing_rates (

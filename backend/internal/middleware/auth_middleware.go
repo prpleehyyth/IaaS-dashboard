@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"iaas-dashboard/internal/database"
 	"iaas-dashboard/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -19,19 +20,18 @@ const (
 	ContextRole     = "role"
 )
 
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func AuthMiddleware(jwtSecret string, redisClients ...*database.RedisClient) gin.HandlerFunc {
+	var redisClient *database.RedisClient
+	if len(redisClients) > 0 {
+		redisClient = redisClients[0]
+	}
+
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			// Also check query param "token" (helpful for WebSocket connections like VM console)
-			tokenParam := c.Query("token")
-			if tokenParam != "" {
-				authHeader = "Bearer " + tokenParam
-			} else {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
-				c.Abort()
-				return
-			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+			c.Abort()
+			return
 		}
 
 		parts := strings.Split(authHeader, " ")
@@ -53,6 +53,12 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired authorization token"})
+			c.Abort()
+			return
+		}
+
+		if redisClient != nil && redisClient.IsUserRevoked(c.Request.Context(), claims.UserID.String()) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User session has been revoked"})
 			c.Abort()
 			return
 		}
