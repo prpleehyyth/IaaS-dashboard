@@ -28,8 +28,8 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
     ...(isAdmin ? [
       { id: 'users', label: 'Users', title: 'Manajemen Pengguna & Akses VM', icon: Users },
       { id: 'billing-rates', label: 'Atur Tarif', title: 'Atur Tarif CPU, Storage & Network', icon: Sliders },
+      { id: 'billing', label: 'Billing', title: 'Laporan Billing & Biaya VM', icon: Receipt },
     ] : []),
-    { id: 'billing', label: 'Billing', title: 'Laporan Billing & Biaya VM', icon: Receipt },
   ];
 
   const handleSelectTab = (id) => {

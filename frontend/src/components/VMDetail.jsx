@@ -63,12 +63,14 @@ export default function VMDetail({
       if (telemData) setTelemetry(telemData);
       if (auditData?.logs) setAuditLogs(auditData.logs);
 
-      // Load billing report if available
-      try {
-        const bill = await api.getBillingReport();
-        setBillingReport(bill);
-      } catch (e) {
-        // non-blocking
+      // Load billing report if available (Admin only)
+      if (isAdmin) {
+        try {
+          const bill = await api.getBillingReport();
+          setBillingReport(bill);
+        } catch (e) {
+          // non-blocking
+        }
       }
     } catch (err) {
       console.error('Failed to load VM detail:', err);
@@ -326,7 +328,9 @@ export default function VMDetail({
           { id: 'network', label: 'Jaringan & Akses', icon: Wifi },
           { id: 'placement', label: 'Infrastruktur Host & Cluster', icon: Server },
           { id: 'audit', label: 'Riwayat Aktivitas Audit', icon: ShieldCheck },
-          { id: 'billing', label: 'Estimasi Billing & Biaya', icon: Receipt },
+          ...(isAdmin ? [
+            { id: 'billing', label: 'Estimasi Billing & Biaya', icon: Receipt },
+          ] : []),
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -659,8 +663,8 @@ export default function VMDetail({
         </div>
       )}
 
-      {/* Tab 5: Estimasi Billing & Biaya */}
-      {activeTab === 'billing' && (
+      {/* Tab 5: Estimasi Billing & Biaya (Admin Only) */}
+      {activeTab === 'billing' && isAdmin && (
         <div className="glass-panel" style={{ padding: '24px' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Receipt size={20} style={{ color: 'var(--ocean-blue)' }} />

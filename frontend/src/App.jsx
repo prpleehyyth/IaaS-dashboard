@@ -395,7 +395,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'billing' && (
+            {activeTab === 'billing' && user?.role === 'ADMIN' && (
               <BillingPreview 
                 user={user}
                 onNavigateRates={() => {
