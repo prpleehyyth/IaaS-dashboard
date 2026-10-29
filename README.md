@@ -1,106 +1,93 @@
-# IaaS — Multi-Tenant Hybrid Cloud Controller (VMware & Proxmox)
+# CloudForge IaaS — Multi-Tenant Hybrid Cloud Controller
 
-Enterprise-grade multi-tenant private cloud management platform built to orchestrate **VMware vSphere** and **Proxmox VE** clusters with dynamic cluster registration, role-based access control, in-browser remote console, and billing telemetry.
+<div align="center">
 
----
+Enterprise Private Cloud Controller & Fleet Virtual Machine Orchestrator for **Proxmox VE** and **VMware vSphere**
 
-## 🚀 Status Environment: VIRGIN DEVELOPMENT MODE
-
-Sistem ini telah dikonfigurasi dalam mode **DEVELOPMENT (Virgin State)**:
-* **0 Mock Clusters & 0 Mock Nodes** (Database bersih total, siap dihubungkan ke cluster Proxmox VE atau VMware vSphere asli via UI/API).
-* **0 Dummy Virtual Machines** (Kosong total, siap di-provisioning).
-* **0 Dummy Activity Logs & Metering Samples**.
-* **1 Default Administrator Account** (`admin` / `admin123`) untuk login pertama kali.
-* **1 Default Organization** (`Default Organization`).
+</div>
 
 ---
 
-## 👥 Hak Akses & Peran Pengguna (Role-Based Access Control)
+## 1. About
 
-| Peran (Role) | Hak Akses & Fitur | Keterangan |
+**CloudForge IaaS** adalah platform manajemen dan orkestrasi *private cloud hybrid* multi-tenant yang memungkinkan pengelolaan terpusat klaster **Proxmox VE** dan **VMware vSphere** dalam satu panel kontrol modern dan terintegrasi.
+
+### ✨ Fitur Unggulan:
+- **Unified Hybrid Orchestration**: Mengendalikan klaster Proxmox VE dan VMware vCenter melalui abstraksi driver terpadu (*unified Go driver interface*).
+- **Dynamic Cluster & Node Fleet**: Pendaftaran klaster hypervisor secara dinamis, penemuan host (*node discovery*), dan sinkronisasi kapasitas sumber daya secara otomatis.
+- **Granular Role-Based Access Control (RBAC)**:
+  - **Administrator (`ADMIN`)**: Manajemen penuh siklus VM, pendaftaran klaster & host fisik, manajemen tenant & kuota, serta pengaturan tarif dan laporan billing komputasi.
+  - **VM Operator (`OPERATOR`)**: Dibatasi hanya untuk mengendalikan VM yang ditugaskan (Start, Stop, Restart, Rebuild OS, dan Remote Console).
+- **In-Browser Remote VM Console**: Akses terminal interaktif langsung di browser via WebSocket tunnel (VNC & WebMKS) serta integrasi monitor grafis NoVNC.
+- **Live Real-Time Telemetry & Diagrams**: Monitoring metrik vCPU, Memory RAM, Storage, dan Network I/O dengan visualisasi **diagram radial donut** dan **grafik gelombang interaktif (SVG wave area chart)** yang diperbarui secara *real-time*.
+- **Enterprise-Grade Security Hardening**: Kredensial klaster dienkripsi menggunakan **AES-256-GCM**, proteksi ketat mitigasi SSRF, sanitasi path hypervisor, validasi CORS & WebSocket Origin, single-use console ticket di Redis, serta container berjalan sebagai user non-root.
+
+---
+
+## 2. Tech Stack & Tools
+
+<div align="center">
+
+![Go](https://img.shields.io/badge/Go-1.22-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+![Gin](https://img.shields.io/badge/Gin-Framework-008ECF?style=for-the-badge&logo=go&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-Reverse_Proxy-009639?style=for-the-badge&logo=nginx&logoColor=white)
+![Proxmox](https://img.shields.io/badge/Proxmox-VE_8-E57000?style=for-the-badge&logo=proxmox&logoColor=white)
+![VMware](https://img.shields.io/badge/VMware-vSphere-607078?style=for-the-badge&logo=vmware&logoColor=white)
+
+</div>
+
+### Komponen Arsitektur:
+| Lapisan (Layer) | Teknologi | Keterangan |
 | :--- | :--- | :--- |
-| **Administrator (`ADMIN`)** | • Manajemen penuh siklus hidup VM (Create, Edit Specs, Power Action, Delete, Rebuild OS)<br>• Manajemen klaster hypervisor & node komputasi fisik<br>• Manajemen pengguna & penugasan akses VM granular<br>• Konfigurasi tarif katalog & melihat laporan billing / metering armada | Akses kontrol global untuk pengelola infrastruktur private cloud. |
-| **VM Operator (`OPERATOR`)** | • Manajemen daya VM yang ditugaskan (Start, Stop, Restart)<br>• Reinstall / Rebuild sistem operasi VM yang ditugaskan<br>• Akses In-Browser Remote Console (Web Shell & NoVNC)<br>• Melihat riwayat audit aktivitas VM miliknya | Dibatasi khusus pada VM yang ditugaskan secara eksplisit oleh Admin. **Fitur dan laporan billing ditiadakan** untuk akun Operator. |
+| **Backend API** | Go 1.22, Gin Gonic, Gorilla WebSocket, SQLX | High-performance async API server & WebSocket tunnel |
+| **Frontend Web** | React 18, Vite, Lucide Icons | Responsive Glassmorphism Dashboard & SVG Live Telemetry Charts |
+| **Database** | PostgreSQL 16 (Alpine) | Relational storage untuk tenant, users, cluster, VM, dan audit logs |
+| **Cache & Lock** | Redis 7 (Alpine) | Distributed locking aksi VM, sesi tiket konsol, dan revokasi JWT |
+| **Reverse Proxy** | Nginx Alpine | Static SPA routing, reverse proxy API, dan HTTP security headers |
+| **Hypervisor Integrasi** | Proxmox VE REST API, VMware vCenter REST API | Konektor orkestrasi infrastruktur virtualisasi |
+| **Orchestration** | Docker & Docker Compose | Multi-container automated orchestration & non-root runner |
 
 ---
 
-## 🔐 Keamanan & Proteksi Data (Security Hardening)
+## 3. Cara Deploy
 
-Platform ini telah melalui audit dan penguatan keamanan menyeluruh (*security hardening*):
+Aplikasi dikemas secara penuh menggunakan Docker Compose, sehingga dapat dijalankan dengan mudah pada server Linux lokal maupun cloud.
 
-1. **Enkripsi Kredensial At-Rest & Redaksi API (`CWE-312`, `CWE-200`)**:
-   - Token Secret Proxmox dan Password Administrator vCenter dienkripsi menggunakan algoritma **AES-256-GCM** dengan prefix `enc:v1:` sebelum disimpan di database PostgreSQL.
-   - Field `auth_secret` dikecualikan secara ketat dari seluruh serialisasi JSON (`json:"-"`), mencegah kebocoran kredensial ke frontend/browser.
-2. **Mitigasi SSRF & Sanitasi Path Hypervisor (`CWE-918`, `CWE-20`)**:
-   - Validasi ketat pada endpoint cluster yang memblokir IP metadata cloud (`169.254.0.0/16`, `metadata.google.internal`), interface loopback (`127.0.0.0/8`), hostname container internal (`redis`, `postgres`, `backend`), dan port sensitif.
-   - Sanitasi ID node dan storage menggunakan `url.PathEscape` sebelum diinterpolasi ke path REST API hypervisor.
-3. **CORS Terbatas & Perlindungan WebSocket Hijacking (`CWE-942`, `CWE-346`)**:
-   - Kebijakan CORS memvalidasi origin menggunakan URL parser presisi terhadap allowlist domain sah, menolak serangan *substring domain spoofing*.
-   - Tiket sesi remote console dikonsumsi secara atomik (*single-use*) menggunakan `GetDel` di Redis dan memverifikasi kecocokan UUID VM target.
-4. **Proteksi Sesi JWT & Rate Limiting (`CWE-613`, `CWE-307`)**:
-   - Penghapusan token autentikasi dari query string pada REST endpoint untuk mencegah kebocoran token di log HTTP.
-   - Mekanisme revokasi sesi pengguna secara langsung di Redis saat akun pengguna dihapus.
-   - Rate limiting pada endpoint login (maksimal 10 percobaan/menit per IP) dengan proteksi batas kapasitas memori.
-5. **Hardening Container & Web Server (`CWE-250`, `CWE-693`)**:
-   - Binary backend Go dijalankan sebagai user non-root (`appuser`, UID 10001) di dalam container Alpine.
-   - Nginx menyematkan HTTP Security Headers standar: `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, dan `Permissions-Policy`.
+### 📋 Prasyarat:
+- **Docker Engine** (versi 24.0 atau lebih baru)
+- **Docker Compose** (versi v2.20 atau lebih baru)
 
 ---
 
-## 🌐 Dynamic Cluster & Node Management
+### 🛠️ Langkah-Langkah Deployment:
 
-Pada mode development virgin ini, Anda dapat mendaftarkan cluster fisik Anda sendiri langsung dari antarmuka:
-1. **Connect Cluster**: Buka tab **"Clusters"**, klik tombol **"+ Connect Cluster"**, pilih tipe (`PROXMOX` atau `VMWARE`), masukkan URL endpoint (misal `https://192.168.1.100:8006`).
-2. **Add Compute Node**: Di dalam kartu cluster yang telah didaftarkan, klik tombol **"+ Add Node"** untuk mendaftarkan host fisik (IP, CPU Cores, RAM GB, Disk GB).
-3. **Reset to Virgin**: Terdapat tombol **"Reset to Virgin"** jika sewaktu-waktu Anda ingin mengosongkan kembali seluruh data dummy ke keadaan bersih (dinonaktifkan secara otomatis pada mode `PRODUCTION`).
+#### 1. Clone Repositori
+```bash
+git clone https://github.com/saiful/IaaS-dashboard.git
+cd IaaS-dashboard
+```
 
----
-
-## 🔐 Manajemen User & Granular VM Assignment (Admin Only)
-
-Sebagai Administrator (`admin`), Anda dapat:
-1. **Melihat Daftar User**: Navigasi ke tab **"Users & VM Access"** di navbar atas.
-2. **Tambah User Baru**: Klik tombol **"+ New User"**, masukkan username, full name, email, password, dan role (`ADMIN` atau `OPERATOR`).
-3. **Assign Akses VM**:
-   - Pada baris user target (misal `operator` atau user baru), klik tombol **"Assign VMs"**.
-   - Modal interaktif akan menampilkan seluruh VM yang tersedia dengan checkbox.
-   - Centang atau hapus centang VM yang diizinkan, lalu klik **"Save Assignments"**.
-   - Perubahan langsung aktif seketika (*real-time enforcement* di database & backend API).
-
----
-
-## 💰 Resource Metering & Multi-Tier Billing (Admin Only)
-
-Modul penagihan dan telemetri sumber daya yang dirancang khusus untuk administrator:
-- **Konfigurasi Tarif (Atur Tarif)**: Pengaturan tarif per jam (vCPU, RAM, Storage, Network) serta komponen bulanan (Virtualisasi, Manajemen, Bandwidth) berdasarkan tingkatan (Tier 1, Tier 2, Tier 3).
-- **Laporan Billing Real-Time**: Rekapitulasi biaya komputasi armada per VM dengan perhitungan jam operasional bulanan (730 jam).
-- **Ekspor Laporan**: Fitur ekspor rincian biaya VM ke format spreadsheet CSV.
-
----
-
-## 🚀 Fitur Utama Lainnya
-
-- **Hybrid Hypervisor Abstraction**: Antarmuka driver Go terpadu (`HypervisorDriver`) yang mengendalikan VMware vSphere (via REST API vCenter) dan Proxmox VE (via REST API Proxmox).
-- **In-Browser Remote VM Console**:
-  - WebSocket tunnel yang mem-proxy sesi VNC/guest console interaktif langsung di browser dengan kontrol Ctrl+Alt+Del, quick commands, dan status koneksi live.
-- **Dukungan NoVNC**: Integrasi tautan monitor grafis langsung ke antarmuka NoVNC Proxmox VE untuk instalasi OS via ISO.
-
----
-
-## ⚙️ Konfigurasi Lingkungan (.env)
-
-Konfigurasi sistem dikendalikan via file `.env` (file `.env` dikecualikan dari Git demi keamanan):
-
+#### 2. Konfigurasi File Environment (`.env`)
+Salin file template contoh atau sesuaikan kredensial pada file `.env`:
+```bash
+cp .env.example .env
+```
+Contoh konfigurasi penting pada `.env`:
 ```ini
-# Pilihan Mode: DEVELOPMENT (lab testing), SIMULATOR (mock data), atau PRODUCTION (hardware fisik riil)
+# Mode: DEVELOPMENT (lab testing), SIMULATOR (mock), atau PRODUCTION (hardware fisik)
 HYPERVISOR_MODE=DEVELOPMENT
 
-# --- KUNCI KEAMANAN & ENKRIPSI ---
+# Kunci Keamanan & Enkripsi AES-256
 JWT_SECRET=super-secret-iaas-private-cloud-key-32chars-min
 MASTER_ENCRYPTION_KEY=super-secret-iaas-private-cloud-key-32chars-min
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://pal.co.id
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
-# --- DATABASE & CACHE ---
+# Database & Cache
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=iaas_db
@@ -109,13 +96,13 @@ REDIS_ADDR=redis:6379
 REDIS_PASSWORD=
 PORT=8080
 
-# --- KREDENSIAL PROXMOX VE ---
+# Kredensial Proxmox VE (Opsional, dapat juga didaftarkan via UI)
 PROXMOX_ENDPOINT=https://192.168.10.100:8006
 PROXMOX_TOKEN_ID=root@pam!iaas_controller
-PROXMOX_TOKEN_SECRET=your-proxmox-token-uuid-here
+PROXMOX_TOKEN_SECRET=your-proxmox-token-secret-here
 PROXMOX_INSECURE_SSL=true
 
-# --- KREDENSIAL VMWARE VCENTER ---
+# Kredensial VMware vCenter (Opsional, dapat juga didaftarkan via UI)
 VCENTER_HOST=192.168.10.50
 VCENTER_USER=administrator@vsphere.local
 VCENTER_PASSWORD=YourVcenterPassword123!
@@ -123,27 +110,47 @@ VCENTER_INSECURE_SSL=true
 VCENTER_DATACENTER=Datacenter-01
 ```
 
----
-
-## 🛠️ Tech Stack
-
-- **Backend**: Go 1.22 + Gin Framework + gorilla/websocket + sqlx + go-redis
-- **Database**: PostgreSQL 16 + Redis 7
-- **Frontend**: React 18 + Vite + Tailwind/Glassmorphism CSS + Lucide Icons + Nginx Alpine
-- **Orchestration**: Docker Compose
-
----
-
-## 🏃 Menjalankan Aplikasi
-
-Jalankan seluruh platform (Frontend, Backend, PostgreSQL, Redis) dengan satu perintah:
-
+#### 3. Jalankan Kontainer Menggunakan Docker Compose
+Bangun image dan jalankan seluruh service di latar belakang (*detached mode*):
 ```bash
 docker compose up --build -d
 ```
 
-### URL Layanan:
-- **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
-- **Backend API Health Check**: [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health)
-- **PostgreSQL**: `localhost:5432` (`postgres` / `postgres` - Database: `iaas_db`)
-- **Redis**: `localhost:6379`
+#### 4. Verifikasi Status Layanan
+Pastikan keempat kontainer berjalan normal dan berstatus *healthy*:
+```bash
+docker compose ps
+```
+
+---
+
+### 🌐 Akses Layanan & Akun Default:
+
+| Layanan | URL / Endpoint | Keterangan |
+| :--- | :--- | :--- |
+| **Frontend Web Panel** | [http://localhost:3000](http://localhost:3000) | Antarmuka dashboard utama |
+| **Backend API Health** | [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health) | REST API health check endpoint |
+| **PostgreSQL Database** | `localhost:5432` | User: `postgres`, DB: `iaas_db` |
+| **Redis Cache** | `localhost:6379` | Key-value store & lock service |
+
+#### 🔑 Kredensial Login Default (Superadmin):
+- **Username**: `admin`
+- **Password**: `admin123`
+*(Disarankan untuk segera mengubah password setelah login pertama kali di menu **Users & VM Access**)*.
+
+---
+
+### 🛑 Perintah Manajemen Kontainer:
+
+- **Melihat Log Aplikasi Secara Live**:
+  ```bash
+  docker compose logs -f
+  ```
+- **Restart Seluruh Layanan**:
+  ```bash
+  docker compose restart
+  ```
+- **Menghentikan Layanan**:
+  ```bash
+  docker compose down
+  ```
