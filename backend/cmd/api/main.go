@@ -85,7 +85,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
 			"mode":    cfg.HypervisorMode,
-			"service": "CloudForge Multi-Tenant Hybrid Cloud Controller",
+			"service": "Private Cloud Multi-Tenant Hybrid Cloud Controller",
 			"time":    time.Now().Format(time.RFC3339),
 		})
 	})
