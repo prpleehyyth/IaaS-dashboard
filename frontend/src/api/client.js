@@ -251,6 +251,17 @@ class ApiClient {
     return this.request('/users');
   }
 
+  async getUserVMs(userId) {
+    return this.request(`/users/${userId}/vms`);
+  }
+
+  async syncUserToProxmox(userId, password = '') {
+    return this.request(`/users/${userId}/sync-proxmox`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  }
+
   async createUser(payload) {
     return this.request('/users', {
       method: 'POST',

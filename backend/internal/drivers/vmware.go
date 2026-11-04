@@ -307,3 +307,15 @@ func (v *VMwareDriver) ListISOs(ctx context.Context, cluster *models.Cluster, no
 		},
 	}, nil
 }
+
+func (v *VMwareDriver) SyncUser(ctx context.Context, cluster *models.Cluster, user models.User, password string) error {
+	return nil
+}
+
+func (v *VMwareDriver) DeleteHypervisorUser(ctx context.Context, cluster *models.Cluster, username string) error {
+	return nil
+}
+
+func (v *VMwareDriver) SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error {
+	return nil
+}

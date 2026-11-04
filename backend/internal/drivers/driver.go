@@ -36,5 +36,10 @@ type HypervisorDriver interface {
 	DiscoverNodes(ctx context.Context, cluster *models.Cluster) ([]models.Node, error)
 	DiscoverVMs(ctx context.Context, cluster *models.Cluster) ([]models.VirtualMachine, error)
 	ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error)
+
+	// Hypervisor User & ACL Synchronization
+	SyncUser(ctx context.Context, cluster *models.Cluster, user models.User, password string) error
+	DeleteHypervisorUser(ctx context.Context, cluster *models.Cluster, username string) error
+	SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error
 }
 

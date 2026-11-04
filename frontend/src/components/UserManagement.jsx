@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, ShieldCheck, UserCheck, Trash2, Key, HardDrive, Check, X, AlertCircle } from 'lucide-react';
+import { Users, UserPlus, ShieldCheck, UserCheck, Trash2, Key, HardDrive, Check, X, AlertCircle, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function UserManagement({ users, vms, tenants, onRefresh, showToast }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [assigningUser, setAssigningUser] = useState(null);
   const [selectedVMs, setSelectedVMs] = useState([]);
+  const [syncingUserId, setSyncingUserId] = useState(null);
 
   // Form State for User Creation
   const [username, setUsername] = useState('');
@@ -13,7 +14,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('OPERATOR');
-  const [tenantId, setTenantId] = useState(tenants[0]?.id || 'tenant-acme-corp');
+  const [tenantId, setTenantId] = useState(tenants[0]?.id || 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
   const [initialVMs, setInitialVMs] = useState([]);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -21,12 +22,14 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
   // Open Assign Modal
   const openAssignModal = async (targetUser) => {
     setAssigningUser(targetUser);
+    setSelectedVMs(targetUser.assigned_vm_ids || []);
     try {
       const assigned = await api.getUserVMs(targetUser.id);
-      setSelectedVMs(assigned.map(v => v.id));
+      if (Array.isArray(assigned)) {
+        setSelectedVMs(assigned.map(v => v.id));
+      }
     } catch (err) {
       console.error("Failed to load user's VMs:", err);
-      setSelectedVMs([]);
     }
   };
 
@@ -44,12 +47,25 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
   const handleSaveAssignments = async () => {
     try {
-      await api.assignVMsToUser(assigningUser.id, selectedVMs);
-      showToast(`Updated VM access privileges for ${assigningUser.username}`);
+      const res = await api.assignVMsToUser(assigningUser.id, selectedVMs);
+      showToast(res.message || `Updated VM access & Proxmox ACLs for ${assigningUser.username}@pve`);
       setAssigningUser(null);
       await onRefresh();
     } catch (err) {
       showToast("Failed to assign VMs: " + err.message, 'error');
+    }
+  };
+
+  const handleSyncProxmox = async (targetUser) => {
+    setSyncingUserId(targetUser.id);
+    try {
+      const res = await api.syncUserToProxmox(targetUser.id);
+      showToast(res.message || `Synced ${targetUser.username}@pve to Proxmox VE`);
+      await onRefresh();
+    } catch (err) {
+      showToast("Proxmox sync error: " + err.message, 'error');
+    } finally {
+      setSyncingUserId(null);
     }
   };
 
@@ -59,21 +75,19 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
     setIsSubmitting(true);
 
     try {
+      const validTenantId = tenants.find(t => t.id === tenantId)?.id || tenants[0]?.id || undefined;
       const newUser = await api.createUser({
         username,
         full_name: fullName,
         email,
         password,
         role,
-        tenant_id: tenantId,
+        tenant_id: validTenantId,
+        assigned_vms: role === 'OPERATOR' ? initialVMs : [],
       });
 
-      // If initial VMs selected for Operator, assign them
-      if (role === 'OPERATOR' && initialVMs.length > 0) {
-        await api.assignVMsToUser(newUser.id, initialVMs);
-      }
-
-      showToast(`User account '${newUser.username}' created successfully`);
+      const syncInfo = newUser.proxmox_sync_msg ? ` (${newUser.proxmox_sync_msg})` : '';
+      showToast(`User '${newUser.username}' created${syncInfo}`);
       setIsCreateModalOpen(false);
       setUsername('');
       setFullName('');
@@ -89,13 +103,13 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
   };
 
   const handleDeleteUser = async (targetUser) => {
-    if (!window.confirm(`Permanently revoke and delete account '${targetUser.username}'?`)) {
+    if (!window.confirm(`Permanently revoke and delete account '${targetUser.username}' (including '${targetUser.proxmox_user_id || targetUser.username + '@pve'}' on Proxmox VE)?`)) {
       return;
     }
 
     try {
       await api.deleteUser(targetUser.id);
-      showToast(`Account '${targetUser.username}' removed`);
+      showToast(`Account '${targetUser.username}' removed from dashboard & Proxmox VE`);
       await onRefresh();
     } catch (err) {
       showToast("Failed to delete user: " + err.message, 'error');
@@ -122,7 +136,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-            Authorize fleet officers (Admiralty Admin) or delegate vessel command to VM Operators.
+            Authorize fleet officers (Admiralty Admin) or delegate vessel command to VM Operators — automatically synced with Proxmox VE (<code>@pve</code> realm &amp; <code>/vms/&lt;vmid&gt;</code> ACLs).
           </p>
         </div>
 
@@ -142,9 +156,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <thead>
             <tr>
               <th>Personnel</th>
-              <th>Rank & Role</th>
+              <th>Rank &amp; Proxmox Realm</th>
               <th>Division / Organization</th>
-              <th>Authorized Vessels (VMs)</th>
+              <th>Authorized Vessels &amp; Proxmox ACL</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
@@ -152,6 +166,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <tbody>
             {users.map((u) => {
               const isAdmin = u.role === 'ADMIN';
+              const pveUser = u.proxmox_user_id || `${u.username}@pve`;
 
               return (
                 <tr key={u.id}>
@@ -178,39 +193,63 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                     </div>
                   </td>
 
-                  {/* Role */}
+                  {/* Role & Proxmox UserID */}
                   <td>
-                    <span className={`role-pill ${isAdmin ? 'admin' : 'operator'}`}>
-                      {u.role}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                      <span className={`role-pill ${isAdmin ? 'admin' : 'operator'}`}>
+                        {u.role}
+                      </span>
+                      <span style={{
+                        fontSize: '0.73rem',
+                        fontFamily: 'monospace',
+                        background: '#fff7ed',
+                        color: '#c2410c',
+                        border: '1px solid #fed7aa',
+                        padding: '1px 7px',
+                        borderRadius: '5px',
+                        fontWeight: 700
+                      }}>
+                        PVE: {pveUser}
+                      </span>
+                    </div>
                   </td>
 
                   {/* Tenant */}
                   <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    {u.tenant_name || 'Fleet Core Command'}
+                    {u.tenant_name || 'Default Organization'}
                   </td>
 
                   {/* Accessible VMs */}
                   <td>
                     {isAdmin ? (
-                      <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
-                        All Fleet Vessels (12 VMs across 4 Clusters)
-                      </span>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ 
-                          fontSize: '0.82rem', 
-                          fontWeight: 700, 
-                          color: u.assigned_vm_count > 0 ? '#059669' : 'var(--text-dim)',
-                          background: u.assigned_vm_count > 0 ? '#ecfdf5' : '#ffffff',
-                          border: u.assigned_vm_count > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-subtle)',
-                          padding: '3px 10px',
-                          borderRadius: '6px'
-                        }}>
-                          {u.assigned_vm_count || 0} Assigned Vessels
+                      <div>
+                        <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
+                          All Fleet Vessels ({vms.length} VMs)
                         </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                          (Power & Remote Console)
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontFamily: 'monospace', marginTop: '2px' }}>
+                          ACL: path=/ • role=PVEAdmin
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ 
+                            fontSize: '0.82rem', 
+                            fontWeight: 700, 
+                            color: u.assigned_vm_count > 0 ? '#059669' : 'var(--text-dim)',
+                            background: u.assigned_vm_count > 0 ? '#ecfdf5' : '#ffffff',
+                            border: u.assigned_vm_count > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-subtle)',
+                            padding: '3px 10px',
+                            borderRadius: '6px'
+                          }}>
+                            {u.assigned_vm_count || 0} Assigned Vessels
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                            (Power &amp; Console)
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '0.73rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                          ACL: path=/vms/&lt;vmid&gt; • role=PVEVMUser
                         </span>
                       </div>
                     )}
@@ -226,6 +265,17 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   {/* Actions */}
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleSyncProxmox(u)}
+                        disabled={syncingUserId === u.id}
+                        title={`Sync ${pveUser} & VM ACLs to Proxmox VE`}
+                        style={{ color: '#c2410c', borderColor: '#fed7aa', background: '#fff7ed' }}
+                      >
+                        <RefreshCw size={13} className={syncingUserId === u.id ? 'spin' : ''} />
+                        <span>{syncingUserId === u.id ? 'Syncing...' : 'Sync PVE'}</span>
+                      </button>
+
                       {!isAdmin && (
                         <button 
                           className="btn btn-secondary btn-sm"
@@ -264,7 +314,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
               <div>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Commission New Fleet Personnel</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Register Admiralty Admin or VM Operator with custom vessel assignments
+                  Creates dashboard account and provisions <code>{username ? `${username}@pve` : '<username>@pve'}</code> in Proxmox VE
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setIsCreateModalOpen(false)} style={{ padding: '6px' }}>
@@ -283,7 +333,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label className="form-label">Username</label>
+                    <label className="form-label">Username (Proxmox <code>@pve</code> ID)</label>
                     <input 
                       type="text" 
                       className="form-input" 
@@ -321,7 +371,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Security Password</label>
+                    <label className="form-label">Security Password (Dashboard &amp; Proxmox)</label>
                     <input 
                       type="password" 
                       className="form-input" 
@@ -342,8 +392,8 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                       value={role}
                       onChange={(e) => setRole(e.target.value)}
                     >
-                      <option value="OPERATOR">VM Operator (Power, Console Control)</option>
-                      <option value="ADMIN">Admiralty Administrator (Full Command)</option>
+                      <option value="OPERATOR">VM Operator (Proxmox Role: PVEVMUser)</option>
+                      <option value="ADMIN">Admiralty Administrator (Proxmox Role: PVEAdmin)</option>
                     </select>
                   </div>
 
@@ -366,7 +416,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   <div style={{ marginTop: '10px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                       <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                        Assign Initial Fleet Vessels ({initialVMs.length} selected):
+                        Assign Initial Fleet Vessels &amp; Proxmox ACLs ({initialVMs.length} selected):
                       </span>
                     </div>
 
@@ -394,7 +444,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                             />
                             <div>
                               <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>{vm.name}</span>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '8px' }}>({vm.ip_address})</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '8px' }}>
+                                ({vm.ip_address}{vm.hypervisor_type === 'PROXMOX' && vm.vmid ? ` • ACL: /vms/${vm.vmid}` : ''})
+                              </span>
                             </div>
                           </div>
                           <span className={vm.hypervisor_type === 'VMWARE' ? 'badge-vmware' : 'badge-proxmox'} style={{ fontSize: '0.7rem' }}>
@@ -412,7 +464,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Commissioning...' : 'Authorize Account'}
+                  {isSubmitting ? 'Commissioning & Syncing...' : 'Authorize & Sync to Proxmox'}
                 </button>
               </div>
             </form>
@@ -426,9 +478,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '620px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Assign Fleet Vessels</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Assign Fleet Vessels &amp; Proxmox ACLs</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Assigning access for Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
+                  Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> • Proxmox ID: <code>{assigningUser.proxmox_user_id || `${assigningUser.username}@pve`}</code> (Role: <code>PVEVMUser</code>)
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setAssigningUser(null)} style={{ padding: '6px' }}>
@@ -497,6 +549,11 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '2px' }}>
                             Node: {vm.node_id} • IP: {vm.ip_address} • {vm.cpu_cores} vCPU, {Math.round(vm.ram_mb / 1024)}GB
+                            {!isVMware && vm.vmid > 0 && (
+                              <span style={{ marginLeft: '6px', color: '#c2410c', fontFamily: 'monospace', fontWeight: 700 }}>
+                                • PVE ACL: /vms/{vm.vmid}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -518,7 +575,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" onClick={handleSaveAssignments}>
-                Save Vessel Assignments
+                Save &amp; Sync Proxmox ACLs
               </button>
             </div>
           </div>

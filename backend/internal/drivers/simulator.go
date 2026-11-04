@@ -145,3 +145,14 @@ func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster,
 	}, nil
 }
 
+func (s *SimulatorDriver) SyncUser(ctx context.Context, cluster *models.Cluster, user models.User, password string) error {
+	return nil
+}
+
+func (s *SimulatorDriver) DeleteHypervisorUser(ctx context.Context, cluster *models.Cluster, username string) error {
+	return nil
+}
+
+func (s *SimulatorDriver) SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error {
+	return nil
+}

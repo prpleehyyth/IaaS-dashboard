@@ -44,7 +44,7 @@ func main() {
 	vmService := services.NewVMService(db, redisClient, driverFactory)
 	consoleService := services.NewConsoleService(db, redisClient, driverFactory, vmService)
 	meteringService := services.NewMeteringService(db)
-	userService := services.NewUserService(db)
+	userService := services.NewUserService(db, driverFactory)
 
 	// 4. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -135,6 +135,8 @@ func main() {
 			adminOnly.GET("/users", userHandler.ListUsers)
 			adminOnly.POST("/users", userHandler.CreateUser)
 			adminOnly.PUT("/users/:id/vms", userHandler.AssignVMs)
+			adminOnly.GET("/users/:id/vms", userHandler.GetUserVMs)
+			adminOnly.POST("/users/:id/sync-proxmox", userHandler.SyncUserToProxmox)
 			adminOnly.DELETE("/users/:id", userHandler.DeleteUser)
 
 			// System Reset (Admin Only)

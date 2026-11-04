@@ -69,6 +69,9 @@ type User struct {
 	TenantName      string      `json:"tenant_name,omitempty" db:"tenant_name"`
 	AssignedVMCount int         `json:"assigned_vm_count" db:"-"`
 	AssignedVMIDs   []uuid.UUID `json:"assigned_vm_ids,omitempty" db:"-"`
+	ProxmoxUserID   string      `json:"proxmox_user_id,omitempty" db:"-"`
+	ProxmoxSynced   bool        `json:"proxmox_synced" db:"-"`
+	ProxmoxSyncMsg  string      `json:"proxmox_sync_msg,omitempty" db:"-"`
 }
 
 type CreateUserRequest struct {

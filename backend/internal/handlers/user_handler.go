@@ -28,6 +28,22 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+func (h *UserHandler) GetUserVMs(c *gin.Context) {
+	idStr := c.Param("id")
+	targetUserID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user UUID format"})
+		return
+	}
+
+	vms, err := h.userService.GetUserVMs(c.Request.Context(), targetUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load user VMs: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, vms)
+}
+
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req models.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -64,7 +80,29 @@ func (h *UserHandler) AssignVMs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "VM access permissions updated successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "VM access permissions updated and synced to Proxmox ACLs"})
+}
+
+func (h *UserHandler) SyncUserToProxmox(c *gin.Context) {
+	idStr := c.Param("id")
+	targetUserID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user UUID format"})
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	msg, err := h.userService.SyncUserToProxmox(c.Request.Context(), targetUserID, req.Password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": msg})
 }
 
 func (h *UserHandler) DeleteUser(c *gin.Context) {
@@ -82,5 +120,5 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "User deleted from dashboard and Proxmox VE"})
 }

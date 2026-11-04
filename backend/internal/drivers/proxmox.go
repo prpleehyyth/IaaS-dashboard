@@ -808,3 +808,197 @@ func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, n
 
 	return results, nil
 }
+
+func FormatProxmoxUserID(username string) string {
+	u := strings.TrimSpace(username)
+	if idx := strings.Index(u, "@"); idx != -1 {
+		u = u[:idx]
+	}
+	clean := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, u)
+	clean = strings.Trim(clean, "-_.")
+	if clean == "" {
+		clean = "iaas-user"
+	}
+	return clean + "@pve"
+}
+
+func (p *ProxmoxDriver) SyncUser(ctx context.Context, cluster *models.Cluster, user models.User, password string) error {
+	userID := FormatProxmoxUserID(user.Username)
+
+	parts := strings.Fields(strings.TrimSpace(user.FullName))
+	firstName := user.Username
+	lastName := ""
+	if len(parts) > 0 {
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = strings.Join(parts[1:], " ")
+		}
+	}
+
+	formData := url.Values{}
+	formData.Set("userid", userID)
+	formData.Set("enable", "1")
+	formData.Set("comment", fmt.Sprintf("CloudForge IaaS Dashboard (%s)", user.Role))
+	if user.Email != "" {
+		formData.Set("email", user.Email)
+	}
+	if firstName != "" {
+		formData.Set("firstname", firstName)
+	}
+	if lastName != "" {
+		formData.Set("lastname", lastName)
+	}
+	if len(password) >= 5 {
+		formData.Set("password", password)
+	}
+
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPost, "/access/users", strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return fmt.Errorf("failed to reach Proxmox /access/users: %w", err)
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyStr := string(bodyBytes)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		lower := strings.ToLower(bodyStr)
+		if strings.Contains(lower, "already exists") || resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusInternalServerError {
+			// User may already exist in @pve realm; update metadata instead
+			updateForm := url.Values{}
+			updateForm.Set("enable", "1")
+			updateForm.Set("comment", fmt.Sprintf("CloudForge IaaS Dashboard (%s)", user.Role))
+			if user.Email != "" {
+				updateForm.Set("email", user.Email)
+			}
+			if firstName != "" {
+				updateForm.Set("firstname", firstName)
+			}
+			if lastName != "" {
+				updateForm.Set("lastname", lastName)
+			}
+
+			putPath := fmt.Sprintf("/access/users/%s", url.PathEscape(userID))
+			respPut, errPut := p.doRequestWithContentType(ctx, http.MethodPut, putPath, strings.NewReader(updateForm.Encode()), "application/x-www-form-urlencoded")
+			if errPut != nil {
+				return fmt.Errorf("Proxmox user sync failed: %w", errPut)
+			}
+			defer respPut.Body.Close()
+			if respPut.StatusCode < 200 || respPut.StatusCode >= 300 {
+				putBody, _ := io.ReadAll(respPut.Body)
+				return fmt.Errorf("Proxmox rejected user creation/update (HTTP %d): %s", resp.StatusCode, string(putBody))
+			}
+
+			if len(password) >= 5 {
+				pwForm := url.Values{}
+				pwForm.Set("userid", userID)
+				pwForm.Set("password", password)
+				if respPw, errPw := p.doRequestWithContentType(ctx, http.MethodPut, "/access/password", strings.NewReader(pwForm.Encode()), "application/x-www-form-urlencoded"); errPw == nil {
+					respPw.Body.Close()
+				}
+			}
+		} else {
+			return fmt.Errorf("Proxmox rejected user creation (HTTP %d): %s", resp.StatusCode, bodyStr)
+		}
+	}
+
+	log.Printf("[Proxmox] Synced user '%s' on %s", userID, p.endpoint)
+
+	// If ADMIN role, grant PVEAdmin on root path /
+	if user.Role == models.RoleAdmin {
+		aclForm := url.Values{}
+		aclForm.Set("path", "/")
+		aclForm.Set("users", userID)
+		aclForm.Set("roles", "PVEAdmin")
+		aclForm.Set("propagate", "1")
+		if respACL, errACL := p.doRequestWithContentType(ctx, http.MethodPut, "/access/acl", strings.NewReader(aclForm.Encode()), "application/x-www-form-urlencoded"); errACL == nil {
+			respACL.Body.Close()
+		}
+	}
+
+	return nil
+}
+
+func (p *ProxmoxDriver) SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error {
+	userID := FormatProxmoxUserID(user.Username)
+
+	// Ensure the user exists in Proxmox @pve realm before applying ACLs
+	if err := p.SyncUser(ctx, cluster, user, ""); err != nil {
+		log.Printf("[Proxmox] Note while ensuring user '%s' before ACL update: %v", userID, err)
+	}
+
+	var lastErr error
+
+	// 1. Revoke removed VM ACLs
+	for _, vmid := range revokeVMIDs {
+		if vmid <= 0 {
+			continue
+		}
+		aclForm := url.Values{}
+		aclForm.Set("path", fmt.Sprintf("/vms/%d", vmid))
+		aclForm.Set("users", userID)
+		aclForm.Set("roles", "PVEVMUser")
+		aclForm.Set("delete", "1")
+
+		resp, err := p.doRequestWithContentType(ctx, http.MethodPut, "/access/acl", strings.NewReader(aclForm.Encode()), "application/x-www-form-urlencoded")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp.Body.Close()
+		log.Printf("[Proxmox] Revoked PVEVMUser ACL on /vms/%d for %s", vmid, userID)
+	}
+
+	// 2. Grant assigned VM ACLs
+	for _, vmid := range assignVMIDs {
+		if vmid <= 0 {
+			continue
+		}
+		aclForm := url.Values{}
+		aclForm.Set("path", fmt.Sprintf("/vms/%d", vmid))
+		aclForm.Set("users", userID)
+		aclForm.Set("roles", "PVEVMUser")
+		aclForm.Set("propagate", "1")
+
+		resp, err := p.doRequestWithContentType(ctx, http.MethodPut, "/access/acl", strings.NewReader(aclForm.Encode()), "application/x-www-form-urlencoded")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("Proxmox ACL error on /vms/%d (HTTP %d): %s", vmid, resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		log.Printf("[Proxmox] Granted PVEVMUser ACL on /vms/%d for %s", vmid, userID)
+	}
+
+	return lastErr
+}
+
+func (p *ProxmoxDriver) DeleteHypervisorUser(ctx context.Context, cluster *models.Cluster, username string) error {
+	userID := FormatProxmoxUserID(username)
+	delPath := fmt.Sprintf("/access/users/%s", url.PathEscape(userID))
+	resp, err := p.doRequest(ctx, http.MethodDelete, delPath, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if (resp.StatusCode >= 200 && resp.StatusCode < 300) || resp.StatusCode == http.StatusNotFound {
+		log.Printf("[Proxmox] Deleted user '%s' from %s", userID, p.endpoint)
+		return nil
+	}
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyStr := strings.ToLower(string(bodyBytes))
+	if strings.Contains(bodyStr, "does not exist") || strings.Contains(bodyStr, "no such user") {
+		return nil
+	}
+	return fmt.Errorf("Proxmox delete user returned HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+}
