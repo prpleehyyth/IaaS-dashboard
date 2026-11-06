@@ -136,11 +136,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
-<<<<<<< HEAD
-            Authorize fleet officers (Admiralty Admin) or delegate vessel command to VM Operators — automatically synced with Proxmox VE (<code>@pve</code> realm &amp; <code>/vms/&lt;vmid&gt;</code> ACLs).
-=======
-            Kelola akun Administrator dan delegasikan izin kontrol VM kepada VM Operator.
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+            Kelola akun Administrator dan delegasikan izin kontrol VM kepada VM Operator (tersinkronisasi otomatis dengan Proxmox VE <code>@pve</code> realm &amp; <code>/vms/&lt;vmid&gt;</code> ACL).
           </p>
         </div>
 
@@ -159,17 +155,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
         <table>
           <thead>
             <tr>
-<<<<<<< HEAD
-              <th>Personnel</th>
-              <th>Rank &amp; Proxmox Realm</th>
-              <th>Division / Organization</th>
-              <th>Authorized Vessels &amp; Proxmox ACL</th>
-=======
-              <th>Nama & Username</th>
-              <th>Role</th>
+              <th>Nama &amp; Username</th>
+              <th>Role &amp; Proxmox Realm</th>
               <th>Organisasi / Tenant</th>
-              <th>Akses Virtual Machine (VM)</th>
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+              <th>Akses Virtual Machine (VM) &amp; ACL</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Aksi</th>
             </tr>
@@ -227,37 +216,15 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
 
                   {/* Tenant */}
                   <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-<<<<<<< HEAD
-                    {u.tenant_name || 'Default Organization'}
-=======
                     {u.tenant_name || 'Organisasi Utama'}
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
                   </td>
 
                   {/* Accessible VMs */}
                   <td>
                     {isAdmin ? (
-<<<<<<< HEAD
                       <div>
                         <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
-                          All Fleet Vessels ({vms.length} VMs)
-=======
-                      <span style={{ fontSize: '0.84rem', color: '#b45309', fontWeight: 700 }}>
-                        Semua Virtual Machine (Akses Penuh)
-                      </span>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ 
-                          fontSize: '0.82rem', 
-                          fontWeight: 700, 
-                          color: u.assigned_vm_count > 0 ? '#059669' : 'var(--text-dim)',
-                          background: u.assigned_vm_count > 0 ? '#ecfdf5' : '#ffffff',
-                          border: u.assigned_vm_count > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-subtle)',
-                          padding: '3px 10px',
-                          borderRadius: '6px'
-                        }}>
-                          {u.assigned_vm_count || 0} VM Ditugaskan
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                          Semua Virtual Machine ({vms.length} VM)
                         </span>
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontFamily: 'monospace', marginTop: '2px' }}>
                           ACL: path=/ • role=PVEAdmin
@@ -275,10 +242,10 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                             padding: '3px 10px',
                             borderRadius: '6px'
                           }}>
-                            {u.assigned_vm_count || 0} Assigned Vessels
+                            {u.assigned_vm_count || 0} VM Ditugaskan
                           </span>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                            (Power &amp; Console)
+                            (Power, Backup &amp; Console)
                           </span>
                         </div>
                         <span style={{ fontSize: '0.73rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
@@ -347,11 +314,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
               <div>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Tambah Pengguna Baru</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-<<<<<<< HEAD
-                  Creates dashboard account and provisions <code>{username ? `${username}@pve` : '<username>@pve'}</code> in Proxmox VE
-=======
-                  Daftarkan Administrator atau VM Operator dengan penugasan VM yang dipilih
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                  Daftarkan Administrator atau VM Operator dan sinkronkan <code>{username ? `${username}@pve` : '<username>@pve'}</code> ke Proxmox VE
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setIsCreateModalOpen(false)} style={{ padding: '6px' }}>
@@ -429,13 +392,8 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                       value={role}
                       onChange={(e) => setRole(e.target.value)}
                     >
-<<<<<<< HEAD
-                      <option value="OPERATOR">VM Operator (Proxmox Role: PVEVMUser)</option>
-                      <option value="ADMIN">Admiralty Administrator (Proxmox Role: PVEAdmin)</option>
-=======
-                      <option value="OPERATOR">VM Operator (Power, Console Control)</option>
-                      <option value="ADMIN">Administrator (Full Access)</option>
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                      <option value="OPERATOR">VM Operator (Power, Backup &amp; Console • Proxmox Role: PVEVMUser)</option>
+                      <option value="ADMIN">Administrator (Full Access • Proxmox Role: PVEAdmin)</option>
                     </select>
                   </div>
 
@@ -458,11 +416,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   <div style={{ marginTop: '10px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                       <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
-<<<<<<< HEAD
-                        Assign Initial Fleet Vessels &amp; Proxmox ACLs ({initialVMs.length} selected):
-=======
-                        Penugasan Awal Virtual Machine ({initialVMs.length} dipilih):
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                        Penugasan Awal Virtual Machine &amp; Proxmox ACL ({initialVMs.length} dipilih):
                       </span>
                     </div>
 
@@ -510,11 +464,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-<<<<<<< HEAD
-                  {isSubmitting ? 'Commissioning & Syncing...' : 'Authorize & Sync to Proxmox'}
-=======
-                  {isSubmitting ? 'Mendaftarkan...' : 'Buat Akun Pengguna'}
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                  {isSubmitting ? 'Mendaftarkan & Sync...' : 'Buat Akun & Sync ke Proxmox'}
                 </button>
               </div>
             </form>
@@ -528,15 +478,9 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
           <div className="modal-content" style={{ maxWidth: '620px' }}>
             <div className="modal-header">
               <div>
-<<<<<<< HEAD
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Assign Fleet Vessels &amp; Proxmox ACLs</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Tugaskan Virtual Machine (VM) &amp; Proxmox ACL</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                   Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> • Proxmox ID: <code>{assigningUser.proxmox_user_id || `${assigningUser.username}@pve`}</code> (Role: <code>PVEVMUser</code>)
-=======
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Tugaskan Virtual Machine (VM)</h2>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Memberikan izin kontrol VM untuk Operator: <strong style={{ color: 'var(--text-main)' }}>@{assigningUser.username}</strong> ({assigningUser.full_name})
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
                 </p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setAssigningUser(null)} style={{ padding: '6px' }}>
@@ -631,11 +575,7 @@ export default function UserManagement({ users, vms, tenants, onRefresh, showToa
                 Batal
               </button>
               <button type="button" className="btn btn-primary" onClick={handleSaveAssignments}>
-<<<<<<< HEAD
-                Save &amp; Sync Proxmox ACLs
-=======
-                Simpan Penugasan VM
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+                Simpan Penugasan &amp; Sync Proxmox ACL
               </button>
             </div>
           </div>

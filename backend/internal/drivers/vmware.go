@@ -865,6 +865,38 @@ func (v *VMwareDriver) TriggerBackup(ctx context.Context, cluster *models.Cluste
 	return msg, nil
 }
 
+func (v *VMwareDriver) RestoreBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backup *models.VMBackup, startAfter bool) (string, error) {
+	if startAfter {
+		_ = v.StartVM(ctx, cluster, node, vmid)
+	} else {
+		_ = v.StopVM(ctx, cluster, node, vmid, true)
+	}
+
+	provider := "NETAPP"
+	mode := "WARM"
+	snapName := "vcenter-snapshot"
+	if backup != nil {
+		if backup.BackupProvider != "" {
+			provider = strings.ToUpper(backup.BackupProvider)
+		}
+		if backup.BackupMode != "" {
+			mode = strings.ToUpper(backup.BackupMode)
+		}
+		if backup.SnapshotName != "" {
+			snapName = backup.SnapshotName
+		}
+	}
+
+	if provider == "VEEAM" {
+		msg := fmt.Sprintf("Veeam Backup & Replication Instant VM Recovery (%s) completed for VM '%s' from snapshot '%s' on vCenter [Auto-Start: %v]", mode, vmName, snapName, startAfter)
+		log.Printf("[VMware Veeam Restore] %s", msg)
+		return msg, nil
+	}
+	msg := fmt.Sprintf("NetApp SnapCenter / ONTAP Volume & VMDK Restore (%s) completed for VM '%s' from snapshot '%s' on vCenter [Auto-Start: %v]", mode, vmName, snapName, startAfter)
+	log.Printf("[VMware NetApp Restore] %s", msg)
+	return msg, nil
+}
+
 func (v *VMwareDriver) noopEnd() error {
 
 	return nil

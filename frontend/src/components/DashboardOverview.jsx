@@ -38,6 +38,7 @@ export default function DashboardOverview({
   onRestartVM,
   onOpenResourceModal,
   onOpenRebuildModal,
+  onOpenBackupModal,
   onNavigateVM,
   onNavigateTab 
 }) {
@@ -665,6 +666,16 @@ export default function DashboardOverview({
                               <span>Start</span>
                             </button>
                           )}
+
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Buka Backup & Restore Center (Warm/Cold - PBS / NetApp / Veeam)"
+                            onClick={() => onOpenBackupModal && onOpenBackupModal(vm)}
+                            style={{ color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                          >
+                            <Database size={12} />
+                            <span>Backup ({vm.backup_count || 0})</span>
+                          </button>
 
                           <button
                             className="btn btn-secondary btn-sm"

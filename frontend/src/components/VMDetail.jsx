@@ -37,31 +37,53 @@ export default function VMDetail({
   onOpenEditModal, 
   onOpenRebuildModal, 
   onOpenResourceModal, 
+  onOpenBackupModal,
   onDeleteVM,
   showToast 
 }) {
   const [vm, setVm] = useState(null);
   const [telemetry, setTelemetry] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [backups, setBackups] = useState([]);
   const [billingReport, setBillingReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'network' | 'placement' | 'audit' | 'billing'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'backups' | 'network' | 'placement' | 'audit' | 'billing'
   const [copiedIP, setCopiedIP] = useState(false);
+
+  // Inline Backup & Restore controls
+  const [backupModeInput, setBackupModeInput] = useState('WARM');
+  const [backupProviderInput, setBackupProviderInput] = useState('NETAPP');
+  const [backupNotes, setBackupNotes] = useState('');
+  const [creatingBackup, setCreatingBackup] = useState(false);
+  const [restoringBackupId, setRestoringBackupId] = useState(null);
+  const [startAfterRestore, setStartAfterRestore] = useState(true);
 
   const isAdmin = user?.role === 'ADMIN' || api.isAdmin();
 
   const loadVMData = async () => {
     try {
-      const [vmData, telemData, auditData] = await Promise.all([
+      const [vmData, telemData, auditData, backupData] = await Promise.all([
         api.getVM(vmId),
         api.getVMTelemetry(vmId).catch(() => null),
-        api.getAuditLogs({ limit: 10, search: vmId }).catch(() => ({ logs: [] }))
+        api.getAuditLogs({ limit: 10, search: vmId }).catch(() => ({ logs: [] })),
+        api.getVMBackups(vmId).catch(() => [])
       ]);
 
       setVm(vmData);
+      if (vmData) {
+        if (vmData.backup_mode && vmData.backup_mode !== 'NONE') {
+          setBackupModeInput(vmData.backup_mode);
+        }
+        if (vmData.backup_provider && vmData.backup_provider !== 'NONE') {
+          setBackupProviderInput(vmData.backup_provider);
+        } else {
+          setBackupProviderInput(vmData.hypervisor_type === 'VMWARE' ? 'NETAPP' : 'PBS');
+        }
+      }
       if (telemData) setTelemetry(telemData);
       if (auditData?.logs) setAuditLogs(auditData.logs);
+      if (Array.isArray(backupData)) setBackups(backupData);
 
       // Load billing report if available (Admin only)
       if (isAdmin) {
@@ -97,6 +119,53 @@ export default function VMDetail({
       if (showToast) showToast(`Gagal mengeksekusi ${action}: ` + err.message, 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleCreateBackupInline = async (e) => {
+    if (e) e.preventDefault();
+    setCreatingBackup(true);
+    try {
+      const prov = vm.hypervisor_type === 'VMWARE' ? backupProviderInput : 'PBS';
+      const res = await api.triggerVMBackup(vm.id, {
+        backup_mode: backupModeInput,
+        backup_provider: prov,
+        notes: backupNotes.trim(),
+      });
+      setBackupNotes('');
+      if (showToast) showToast(res.message || `Backup ${backupModeInput} (${prov}) berhasil dibuat`);
+      await loadVMData();
+    } catch (err) {
+      if (showToast) showToast('Gagal membuat backup: ' + err.message, 'error');
+    } finally {
+      setCreatingBackup(false);
+    }
+  };
+
+  const handleRestoreInline = async (backup) => {
+    if (!window.confirm(`Restore VM '${vm.name}' ke snapshot '${backup.snapshot_name}' (${backup.backup_provider} • ${backup.backup_mode})?`)) {
+      return;
+    }
+    setRestoringBackupId(backup.id);
+    try {
+      const res = await api.restoreVMBackup(vm.id, backup.id, { start_after: startAfterRestore });
+      if (showToast) showToast(res.message || `VM '${vm.name}' berhasil di-restore dari '${backup.snapshot_name}'`);
+      await loadVMData();
+    } catch (err) {
+      if (showToast) showToast('Gagal melakukan restore: ' + err.message, 'error');
+    } finally {
+      setRestoringBackupId(null);
+    }
+  };
+
+  const handleDeleteBackupInline = async (backup) => {
+    if (!window.confirm(`Hapus snapshot backup '${backup.snapshot_name}'?`)) return;
+    try {
+      await api.deleteVMBackup(vm.id, backup.id);
+      if (showToast) showToast(`Snapshot '${backup.snapshot_name}' berhasil dihapus`);
+      await loadVMData();
+    } catch (err) {
+      if (showToast) showToast('Gagal menghapus snapshot: ' + err.message, 'error');
     }
   };
 
@@ -200,6 +269,15 @@ export default function VMDetail({
           >
             <RotateCw size={13} />
             <span>Restart</span>
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => onOpenBackupModal ? onOpenBackupModal(vm) : setActiveTab('backups')}
+            style={{ color: '#d97706', borderColor: '#fde68a', background: '#fffbeb', fontWeight: 700 }}
+          >
+            <Database size={13} />
+            <span>Backup &amp; Restore ({backups.length})</span>
           </button>
 
           <button
@@ -325,6 +403,7 @@ export default function VMDetail({
       }}>
         {[
           { id: 'overview', label: 'Ikhtisar Hardware & Metrik', icon: Cpu },
+          { id: 'backups', label: `Backup & Restore (${backups.length})`, icon: Database },
           { id: 'network', label: 'Jaringan & Akses', icon: Wifi },
           { id: 'placement', label: 'Infrastruktur Host & Cluster', icon: Server },
           { id: 'audit', label: 'Riwayat Aktivitas Audit', icon: ShieldCheck },
@@ -474,6 +553,293 @@ export default function VMDetail({
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '2px' }}>ID UUID: {vm.id}</div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Backup & Restore (Proxmox PBS / VMware NetApp & Veeam) */}
+      {activeTab === 'backups' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Database size={20} style={{ color: '#0369a1' }} />
+                  <span>Buat Backup Baru (Warm / Cold Snapshot)</span>
+                </h2>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                  {vm.hypervisor_type === 'PROXMOX'
+                    ? 'Proxmox VE menggunakan Proxmox Backup Server (PBS) untuk deduplikasi dan enkripsi snapshot.'
+                    : 'VMware vCenter menggunakan NetApp ONTAP SnapMirror/SnapVault atau Veeam Backup & Replication.'}
+                </p>
+              </div>
+              {onOpenBackupModal && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => onOpenBackupModal(vm)}
+                  style={{ color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                >
+                  <Database size={14} />
+                  <span>Buka Backup Center Penuh</span>
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleCreateBackupInline}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    1. Pilih Mode Backup
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBackupModeInput('WARM')}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '10px',
+                        border: backupModeInput === 'WARM' ? '2px solid #d97706' : '1px solid var(--border-subtle)',
+                        background: backupModeInput === 'WARM' ? '#fffbeb' : '#ffffff',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: '0.84rem', color: backupModeInput === 'WARM' ? '#b45309' : 'var(--text-main)' }}>
+                        🔥 WARM Backup
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Live Snapshot (Tanpa Downtime)
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBackupModeInput('COLD')}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '10px',
+                        border: backupModeInput === 'COLD' ? '2px solid #0284c7' : '1px solid var(--border-subtle)',
+                        background: backupModeInput === 'COLD' ? '#f0f9ff' : '#ffffff',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: '0.84rem', color: backupModeInput === 'COLD' ? '#0369a1' : 'var(--text-main)' }}>
+                        ❄️ COLD Backup
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Stop / Full Archive Konsisten
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    2. Pilih Engine / Provider Backup
+                  </label>
+                  {vm.hypervisor_type === 'PROXMOX' ? (
+                    <div style={{ padding: '10px 12px', borderRadius: '10px', border: '2px solid #059669', background: '#ecfdf5' }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#065f46' }}>
+                        Proxmox Backup Server (PBS)
+                      </div>
+                      <div style={{ fontSize: '0.73rem', color: '#047857', marginTop: '2px' }}>
+                        Storage: pbs-enterprise-ds01 • ZSTD Deduplication
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setBackupProviderInput('NETAPP')}
+                        style={{
+                          padding: '10px',
+                          borderRadius: '10px',
+                          border: backupProviderInput === 'NETAPP' ? '2px solid #1d4ed8' : '1px solid var(--border-subtle)',
+                          background: backupProviderInput === 'NETAPP' ? '#eff6ff' : '#ffffff',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: '0.84rem', color: backupProviderInput === 'NETAPP' ? '#1e40af' : 'var(--text-main)' }}>
+                          NetApp ONTAP
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          SnapMirror / SnapVault SAN
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBackupProviderInput('VEEAM')}
+                        style={{
+                          padding: '10px',
+                          borderRadius: '10px',
+                          border: backupProviderInput === 'VEEAM' ? '2px solid #059669' : '1px solid var(--border-subtle)',
+                          background: backupProviderInput === 'VEEAM' ? '#ecfdf5' : '#ffffff',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: '0.84rem', color: backupProviderInput === 'VEEAM' ? '#065f46' : 'var(--text-main)' }}>
+                          Veeam B&R
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          CBT + Instant VM Recovery
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    3. Catatan Backup & Eksekusi
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Contoh: Pre-upgrade patch v2.1"
+                      value={backupNotes}
+                      onChange={(e) => setBackupNotes(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={creatingBackup}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      <Database size={14} />
+                      <span>{creatingBackup ? 'Memproses...' : `Jalankan ${backupModeInput}`}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                  Daftar Snapshot Backup Tersedia ({backups.length})
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                  Operator dan Administrator dapat melihat seluruh arsip backup VM ini dan melakukan Restore mandiri kapan saja.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={fetchVMBackups}
+                disabled={backupsLoading}
+              >
+                <RotateCw size={13} className={backupsLoading ? 'spin' : ''} />
+                <span>Refresh Daftar</span>
+              </button>
+            </div>
+
+            {backups.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px dashed var(--border-subtle)' }}>
+                <Database size={32} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
+                <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.95rem' }}>
+                  Belum Ada Arsip Backup untuk VM Ini
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Klik tombol <strong>Jalankan {backupModeInput}</strong> di atas untuk membuat titik pemulihan pertama.
+                </div>
+              </div>
+            ) : (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Snapshot Name & Notes</th>
+                      <th>Mode</th>
+                      <th>Engine / Repository</th>
+                      <th>Ukuran</th>
+                      <th>Waktu & Pembuat</th>
+                      <th style={{ textAlign: 'right' }}>Aksi Restore</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backups.map((b) => (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.83rem', color: 'var(--text-main)' }}>
+                            {b.snapshot_name}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {b.notes || 'Automated / On-Demand Snapshot'}
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '3px 9px',
+                            borderRadius: '9999px',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            background: b.backup_mode === 'WARM' ? '#fffbeb' : '#f0f9ff',
+                            color: b.backup_mode === 'WARM' ? '#b45309' : '#0369a1',
+                            border: b.backup_mode === 'WARM' ? '1px solid #fde68a' : '1px solid #bae6fd'
+                          }}>
+                            {b.backup_mode === 'WARM' ? '🔥 WARM' : '❄️ COLD'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-main)' }}>
+                            {b.backup_provider === 'PBS'
+                              ? 'Proxmox Backup Server (PBS)'
+                              : b.backup_provider === 'NETAPP'
+                              ? 'NetApp ONTAP SnapCenter'
+                              : 'Veeam Backup & Replication'}
+                          </div>
+                          <div style={{ fontSize: '0.73rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                            {b.storage_repo}
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: 700, fontSize: '0.83rem' }}>
+                          {Number(b.size_gb || 0).toFixed(2)} GB
+                        </td>
+                        <td>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                            {new Date(b.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+                          </div>
+                          <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                            Oleh: {b.created_by || 'system'}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={restoringBackupId === b.id}
+                              onClick={() => handleRestoreInline(b)}
+                              style={{ color: '#059669', borderColor: '#a7f3d0', background: '#ecfdf5', fontWeight: 700 }}
+                            >
+                              <RotateCw size={12} className={restoringBackupId === b.id ? 'spin' : ''} />
+                              <span>{restoringBackupId === b.id ? 'Restoring...' : 'Restore VM'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleDeleteBackupInline(b)}
+                              style={{ color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2' }}
+                              title="Hapus Snapshot"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

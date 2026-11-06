@@ -34,6 +34,7 @@ export default function VMManagement({
   onOpenEditModal, 
   onOpenRebuildModal,
   onOpenResourceModal,
+  onOpenBackupModal,
   onNavigateVM,
   onBackupVM,
   onDeleteVM 
@@ -286,18 +287,23 @@ export default function VMManagement({
                           <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
                         </div>
 
-                        {/* Backup Add-On Badge */}
+                        {/* Backup Add-On Badge & Snapshot Count */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
                           {hasBackupAddon ? (
-                            <span style={{
-                              fontSize: '0.7rem',
-                              fontWeight: 800,
-                              padding: '1px 7px',
-                              borderRadius: '4px',
-                              background: bMode === 'WARM' ? '#fffbeb' : '#eff6ff',
-                              color: bMode === 'WARM' ? '#d97706' : '#0284c7',
-                              border: `1px solid ${bMode === 'WARM' ? '#fde68a' : '#bae6fd'}`
-                            }}>
+                            <span
+                              onClick={() => onOpenBackupModal && onOpenBackupModal(vm)}
+                              style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                padding: '1px 7px',
+                                borderRadius: '4px',
+                                background: bMode === 'WARM' ? '#fffbeb' : '#eff6ff',
+                                color: bMode === 'WARM' ? '#d97706' : '#0284c7',
+                                border: `1px solid ${bMode === 'WARM' ? '#fde68a' : '#bae6fd'}`,
+                                cursor: onOpenBackupModal ? 'pointer' : 'default'
+                              }}
+                              title="Klik untuk membuka Backup & Restore Center"
+                            >
                               {bProvider} • {bMode} ({vm.backup_quota_gb || vm.disk_gb} GB • {vm.backup_schedule || 'DAILY'})
                             </span>
                           ) : (
@@ -305,6 +311,22 @@ export default function VMManagement({
                               Backup: Manual ({bProvider})
                             </span>
                           )}
+                          <span
+                            onClick={() => onOpenBackupModal && onOpenBackupModal(vm)}
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: (vm.backup_count || 0) > 0 ? '#ecfdf5' : '#f1f5f9',
+                              color: (vm.backup_count || 0) > 0 ? '#059669' : '#64748b',
+                              border: `1px solid ${(vm.backup_count || 0) > 0 ? '#a7f3d0' : '#cbd5e1'}`,
+                              cursor: onOpenBackupModal ? 'pointer' : 'default'
+                            }}
+                            title="Lihat daftar backup & restore VM ini"
+                          >
+                            {vm.backup_count || 0} Backup
+                          </span>
                         </div>
 
                         {isRunning && fleetTelemetry[vm.id] && (
@@ -385,21 +407,22 @@ export default function VMManagement({
                           <RotateCw size={13} />
                         </button>
 
-                        {/* Trigger Immediate Backup (PBS for Proxmox / NetApp for VMware) */}
-                        {onBackupVM && (
+                        {/* Open Backup & Restore Center (PBS for Proxmox / NetApp & Veeam for VMware) */}
+                        {(onOpenBackupModal || onBackupVM) && (
                           <button
                             className="btn btn-secondary btn-sm"
-                            title={`Jalankan Backup ${hasBackupAddon ? bMode : 'WARM'} via ${bProvider === 'VEEAM' ? 'Veeam Backup & Replication' : bProvider === 'NETAPP' ? 'NetApp ONTAP' : 'Proxmox Backup Server (PBS)'}`}
+                            title={`Kelola Backup (Warm/Cold) & Restore via ${bProvider === 'VEEAM' ? 'Veeam Backup & Replication' : bProvider === 'NETAPP' ? 'NetApp ONTAP' : 'Proxmox Backup Server (PBS)'}`}
                             disabled={isLoading}
-                            onClick={() => handleAction(onBackupVM, vm)}
+                            onClick={() => onOpenBackupModal ? onOpenBackupModal(vm) : handleAction(onBackupVM, vm)}
                             style={{
                               color: bMode === 'COLD' ? '#0284c7' : '#d97706',
                               borderColor: bMode === 'COLD' ? '#bae6fd' : '#fde68a',
-                              background: bMode === 'COLD' ? '#f0f9ff' : '#fffbeb'
+                              background: bMode === 'COLD' ? '#f0f9ff' : '#fffbeb',
+                              fontWeight: 700
                             }}
                           >
                             <Database size={13} />
-                            <span>Backup {hasBackupAddon ? bMode : bProvider}</span>
+                            <span>Backup &amp; Restore ({vm.backup_count || 0})</span>
                           </button>
                         )}
 

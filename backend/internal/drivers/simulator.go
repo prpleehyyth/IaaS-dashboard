@@ -251,3 +251,28 @@ func (s *SimulatorDriver) TriggerBackup(ctx context.Context, cluster *models.Clu
 	}
 	return fmt.Sprintf("Proxmox Backup Server (PBS) %s Backup [mode=%s] completed for VM '%s' (VMID %d)", modeUpper, vzdumpMode, vmName, vmid), nil
 }
+
+func (s *SimulatorDriver) RestoreBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backup *models.VMBackup, startAfter bool) (string, error) {
+	time.Sleep(200 * time.Millisecond)
+	provider := "PBS"
+	mode := "WARM"
+	snapName := "snapshot"
+	if backup != nil {
+		if backup.BackupProvider != "" {
+			provider = strings.ToUpper(backup.BackupProvider)
+		}
+		if backup.BackupMode != "" {
+			mode = strings.ToUpper(backup.BackupMode)
+		}
+		if backup.SnapshotName != "" {
+			snapName = backup.SnapshotName
+		}
+	}
+	if cluster != nil && cluster.Type == models.HypervisorVMware {
+		if provider == "VEEAM" {
+			return fmt.Sprintf("Veeam Backup & Replication Instant VM Recovery (%s) completed for VM '%s' from '%s' [Auto-Start: %v]", mode, vmName, snapName, startAfter), nil
+		}
+		return fmt.Sprintf("NetApp ONTAP SnapCenter Restore (%s) completed for VM '%s' from '%s' [Auto-Start: %v]", mode, vmName, snapName, startAfter), nil
+	}
+	return fmt.Sprintf("Proxmox Backup Server (PBS) Restore (%s) completed for VM '%s' (VMID %d) from '%s' [Auto-Start: %v]", mode, vmName, vmid, snapName, startAfter), nil
+}

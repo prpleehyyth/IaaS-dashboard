@@ -47,11 +47,7 @@ func main() {
 	vmService := services.NewVMService(db, redisClient, driverFactory)
 	consoleService := services.NewConsoleService(db, redisClient, driverFactory, vmService)
 	meteringService := services.NewMeteringService(db)
-<<<<<<< HEAD
-	userService := services.NewUserService(db, driverFactory)
-=======
-	userService := services.NewUserService(db, redisClient)
->>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
+	userService := services.NewUserService(db, driverFactory, redisClient)
 
 	// 4. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -109,14 +105,18 @@ func main() {
 		api.GET("/clusters/:id", clusterHandler.GetCluster)
 		api.GET("/clusters/:id/isos", clusterHandler.GetClusterISOs)
 
-		// Virtual Machines (Admin & Operator)
+		// Virtual Machines & Backup/Restore (Admin & Operator)
 		api.GET("/vms", vmHandler.ListVMs)
 		api.GET("/vms/telemetry", vmHandler.GetFleetTelemetry)
+		api.GET("/backups", vmHandler.ListAllBackups)
 		api.GET("/vms/:id", vmHandler.GetVM)
 		api.GET("/vms/:id/telemetry", vmHandler.GetVMTelemetry)
-		api.POST("/vms/:id/action", vmHandler.ExecutePowerAction) // Start, Stop, Restart
-		api.POST("/vms/:id/backup", vmHandler.ExecuteBackup)      // Proxmox PBS / VMware NetApp Backup (Warm/Cold)
-		api.POST("/vms/:id/rebuild", vmHandler.RebuildVM)         // OS Reinstallation (Rebuild)
+		api.POST("/vms/:id/action", vmHandler.ExecutePowerAction)                   // Start, Stop, Restart
+		api.GET("/vms/:id/backups", vmHandler.ListVMBackups)                        // List VM Backups (PBS / NetApp / Veeam)
+		api.POST("/vms/:id/backup", vmHandler.ExecuteBackup)                        // Trigger Proxmox PBS / VMware NetApp or Veeam Backup (Warm/Cold)
+		api.POST("/vms/:id/backups/:backupId/restore", vmHandler.RestoreVMBackup)   // Restore VM from Backup Snapshot
+		api.DELETE("/vms/:id/backups/:backupId", vmHandler.DeleteVMBackup)          // Delete Backup Snapshot
+		api.POST("/vms/:id/rebuild", vmHandler.RebuildVM)                           // OS Reinstallation (Rebuild)
 		api.POST("/vms/:id/console", consoleHandler.RequestConsoleSession)
 		api.GET("/audit-logs", vmHandler.GetAuditLogs)
 

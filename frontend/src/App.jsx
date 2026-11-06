@@ -12,6 +12,7 @@ import BillingPreview from './components/BillingPreview';
 import LoginModal from './components/LoginModal';
 import RebuildVMModal from './components/RebuildVMModal';
 import VMResourceModal from './components/VMResourceModal';
+import VMBackupModal from './components/VMBackupModal';
 import VMDetail from './components/VMDetail';
 import ClusterDetail from './components/ClusterDetail';
 import { api } from './api/client';
@@ -37,6 +38,7 @@ export default function App() {
   const [consoleVM, setConsoleVM] = useState(null);
   const [rebuildVM, setRebuildVM] = useState(null);
   const [resourceVM, setResourceVM] = useState(null);
+  const [backupModalVM, setBackupModalVM] = useState(null);
 
   // Notification Toast
   const [toast, setToast] = useState(null);
@@ -154,6 +156,7 @@ export default function App() {
       setConsoleVM(null);
       setRebuildVM(null);
       setResourceVM(null);
+      setBackupModalVM(null);
 
       await loadData();
       showToast(`Mode dialihkan ke: ${resp.user.role === 'ADMIN' ? 'Administrator' : 'Operator'}`);
@@ -316,6 +319,7 @@ export default function App() {
             onOpenEditModal={(vm) => setEditingVM(vm)}
             onOpenRebuildModal={(vm) => setRebuildVM(vm)}
             onOpenResourceModal={(vm) => setResourceVM(vm)}
+            onOpenBackupModal={(vm) => setBackupModalVM(vm)}
             onDeleteVM={(vm) => {
               handleDeleteVM(vm);
               setSelectedVMId(null);
@@ -348,6 +352,7 @@ export default function App() {
                 onRestartVM={handleRestartVM}
                 onOpenResourceModal={(vm) => setResourceVM(vm)}
                 onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+                onOpenBackupModal={(vm) => setBackupModalVM(vm)}
                 onNavigateVM={(vid) => setSelectedVMId(vid)}
                 onNavigateTab={(tab) => {
                   setSelectedVMId(null);
@@ -380,6 +385,7 @@ export default function App() {
                 onOpenEditModal={(vm) => setEditingVM(vm)}
                 onOpenRebuildModal={(vm) => setRebuildVM(vm)}
                 onOpenResourceModal={(vm) => setResourceVM(vm)}
+                onOpenBackupModal={(vm) => setBackupModalVM(vm)}
                 onNavigateVM={(vid) => setSelectedVMId(vid)}
                 onBackupVM={handleBackupVM}
                 onDeleteVM={handleDeleteVM}
@@ -462,6 +468,16 @@ export default function App() {
         <VMResourceModal 
           vm={resourceVM}
           onClose={() => setResourceVM(null)}
+        />
+      )}
+
+      {backupModalVM && (
+        <VMBackupModal
+          vm={backupModalVM}
+          user={user}
+          onClose={() => setBackupModalVM(null)}
+          onBackupSuccess={() => loadData()}
+          showToast={showToast}
         />
       )}
     </div>

@@ -139,6 +139,34 @@ CREATE TABLE IF NOT EXISTS user_vm_assignments (
 CREATE INDEX IF NOT EXISTS idx_user_vm_user ON user_vm_assignments(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_vm_vm ON user_vm_assignments(vm_id);
 
+-- 8b. VM Backups & Snapshots Table (Proxmox PBS, VMware NetApp ONTAP & Veeam B&R)
+CREATE TABLE IF NOT EXISTS vm_backups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vm_id UUID REFERENCES virtual_machines(id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    cluster_id VARCHAR(50),
+    node_id VARCHAR(50),
+    vm_name VARCHAR(100) NOT NULL,
+    vmid INT DEFAULT 0,
+    hypervisor_type VARCHAR(20) NOT NULL,
+    backup_provider VARCHAR(30) NOT NULL, -- 'PBS', 'NETAPP', 'VEEAM'
+    backup_mode VARCHAR(20) NOT NULL,     -- 'WARM', 'COLD'
+    snapshot_name VARCHAR(180) NOT NULL,
+    storage_repo VARCHAR(120) DEFAULT '',
+    size_gb NUMERIC(10, 2) DEFAULT 0,
+    compression VARCHAR(80) DEFAULT '',
+    status VARCHAR(20) DEFAULT 'AVAILABLE', -- 'AVAILABLE', 'RESTORING', 'FAILED'
+    notes TEXT DEFAULT '',
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by_name VARCHAR(100) DEFAULT '',
+    restored_at TIMESTAMP WITH TIME ZONE,
+    restore_count INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_vm_backups_vm ON vm_backups(vm_id);
+CREATE INDEX IF NOT EXISTS idx_vm_backups_tenant ON vm_backups(tenant_id);
+
 -- =========================================================================
 -- VIRGIN DEVELOPMENT SEED DATA (Clean State)
 -- =========================================================================

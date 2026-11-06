@@ -46,7 +46,8 @@ type HypervisorDriver interface {
 	DeleteHypervisorUser(ctx context.Context, cluster *models.Cluster, username string) error
 	SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error
 
-	// Backup & Disaster Recovery (Proxmox PBS / VMware NetApp)
+	// Backup & Disaster Recovery (Proxmox PBS / VMware NetApp & Veeam)
 	TriggerBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backupMode string) (string, error)
+	RestoreBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backup *models.VMBackup, startAfter bool) (string, error)
 }
 

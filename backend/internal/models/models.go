@@ -160,6 +160,42 @@ type VirtualMachine struct {
 	ClusterName string `json:"cluster_name,omitempty" db:"cluster_name"`
 	NodeName    string `json:"node_name,omitempty" db:"node_name"`
 	TenantName  string `json:"tenant_name,omitempty" db:"tenant_name"`
+	BackupCount int    `json:"backup_count" db:"backup_count"`
+}
+
+// VMBackup Model (Proxmox PBS, VMware NetApp ONTAP, VMware Veeam B&R)
+type VMBackup struct {
+	ID             uuid.UUID  `json:"id" db:"id"`
+	VMIDRef        uuid.UUID  `json:"vm_id" db:"vm_id"`
+	TenantID       uuid.UUID  `json:"tenant_id" db:"tenant_id"`
+	ClusterID      string     `json:"cluster_id" db:"cluster_id"`
+	NodeID         string     `json:"node_id" db:"node_id"`
+	VMName         string     `json:"vm_name" db:"vm_name"`
+	VMID           int        `json:"vmid" db:"vmid"`
+	HypervisorType string     `json:"hypervisor_type" db:"hypervisor_type"`
+	BackupProvider string     `json:"backup_provider" db:"backup_provider"` // "PBS", "NETAPP", "VEEAM"
+	BackupMode     string     `json:"backup_mode" db:"backup_mode"`         // "WARM", "COLD"
+	SnapshotName   string     `json:"snapshot_name" db:"snapshot_name"`
+	StorageRepo    string     `json:"storage_repo" db:"storage_repo"`
+	SizeGB         float64    `json:"size_gb" db:"size_gb"`
+	Compression    string     `json:"compression" db:"compression"`
+	Status         string     `json:"status" db:"status"` // "AVAILABLE", "RESTORING", "FAILED"
+	Notes          string     `json:"notes" db:"notes"`
+	CreatedBy      *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
+	CreatedByName  string     `json:"created_by_name" db:"created_by_name"`
+	RestoredAt     *time.Time `json:"restored_at,omitempty" db:"restored_at"`
+	RestoreCount   int        `json:"restore_count" db:"restore_count"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+}
+
+type TriggerBackupRequest struct {
+	BackupMode     string `json:"backup_mode"`     // "WARM" or "COLD"
+	BackupProvider string `json:"backup_provider"` // "PBS", "NETAPP", "VEEAM"
+	Notes          string `json:"notes"`
+}
+
+type RestoreBackupRequest struct {
+	StartAfter bool `json:"start_after"`
 }
 
 // VMActivityLog Model
@@ -226,10 +262,11 @@ type CreateVMRequest struct {
 	DiskGB         int            `json:"disk_gb" binding:"required,min=10"`
 	OSType         string         `json:"os_type" binding:"required"`
 	ISOImage       string         `json:"iso_image"`
-	BackupMode     string         `json:"backup_mode"`     // "NONE", "WARM", "COLD"
-	BackupProvider string         `json:"backup_provider"` // "NONE", "PBS", "NETAPP", "VEEAM"
-	BackupQuotaGB  int            `json:"backup_quota_gb"`
-	BackupSchedule string         `json:"backup_schedule"` // "NONE", "DAILY", "WEEKLY"
+	BackupMode          string         `json:"backup_mode"`     // "NONE", "WARM", "COLD"
+	BackupProvider      string         `json:"backup_provider"` // "NONE", "PBS", "NETAPP", "VEEAM"
+	BackupQuotaGB       int            `json:"backup_quota_gb"`
+	BackupSchedule      string         `json:"backup_schedule"` // "NONE", "DAILY", "WEEKLY"
+	CreateInitialBackup *bool          `json:"create_initial_backup"`
 	// Network & VLAN Configuration (802.1Q)
 	NetworkBridge  string         `json:"network_bridge"` // e.g. "vmbr0", "vmbr1"
 	VLANTag        *int           `json:"vlan_tag"`       // e.g. 10, 20 (nil or <=0 for no VLAN)

@@ -162,9 +162,6 @@ func (h *VMHandler) ExecutePowerAction(c *gin.Context) {
 	c.JSON(http.StatusOK, vm)
 }
 
-	c.JSON(http.StatusOK, vm)
-}
-
 func (h *VMHandler) ExecuteBackup(c *gin.Context) {
 	idStr := c.Param("id")
 	vmID, err := uuid.Parse(idStr)
@@ -173,16 +170,14 @@ func (h *VMHandler) ExecuteBackup(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		BackupMode string `json:"backup_mode"` // "WARM" or "COLD"
-	}
+	var req models.TriggerBackupRequest
 	_ = c.ShouldBindJSON(&req)
 
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 	role := middleware.GetUserRole(c)
 
-	vm, msg, err := h.vmService.ExecuteBackup(c.Request.Context(), vmID, userID, tenantID, role, req.BackupMode)
+	vm, backup, msg, err := h.vmService.ExecuteBackup(c.Request.Context(), vmID, userID, tenantID, role, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -191,7 +186,105 @@ func (h *VMHandler) ExecuteBackup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": msg,
 		"vm":      vm,
+		"backup":  backup,
 	})
+}
+
+func (h *VMHandler) ListVMBackups(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	backups, err := h.vmService.ListVMBackups(c.Request.Context(), vmID, userID, tenantID, role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, backups)
+}
+
+func (h *VMHandler) ListAllBackups(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	backups, err := h.vmService.ListAllAccessibleBackups(c.Request.Context(), userID, tenantID, role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, backups)
+}
+
+func (h *VMHandler) RestoreVMBackup(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	backupIDStr := c.Param("backupId")
+	backupID, err := uuid.Parse(backupIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Backup UUID format"})
+		return
+	}
+
+	var req models.RestoreBackupRequest
+	_ = c.ShouldBindJSON(&req)
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	vm, backup, msg, err := h.vmService.RestoreVMBackup(c.Request.Context(), vmID, backupID, userID, tenantID, role, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": msg,
+		"vm":      vm,
+		"backup":  backup,
+	})
+}
+
+func (h *VMHandler) DeleteVMBackup(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	backupIDStr := c.Param("backupId")
+	backupID, err := uuid.Parse(backupIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Backup UUID format"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	if err := h.vmService.DeleteVMBackup(c.Request.Context(), vmID, backupID, userID, tenantID, role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Backup snapshot successfully removed"})
 }
 
 func (h *VMHandler) RebuildVM(c *gin.Context) {

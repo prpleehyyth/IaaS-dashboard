@@ -28,7 +28,6 @@ import {
   SERVICES_LICENSE_CATALOG,
   calculateBackupAddonCost,
   formatCurrencyIDR,
-  formatCurrencyIDR,
   formatNumber
 } from '../constants/pricingCatalog';
 
@@ -50,7 +49,6 @@ export default function BillingPreview({ user, onNavigateRates }) {
   const [calcBackupProvider, setCalcBackupProvider] = useState('NETAPP'); // 'NETAPP' | 'VEEAM' (when VMWARE)
   const [calcBackupMode, setCalcBackupMode] = useState('NONE'); // 'NONE' | 'WARM' | 'COLD'
   const [calcBackup, setCalcBackup] = useState('NONE'); // legacy alias
-  const [calcBackup, setCalcBackup] = useState('NONE'); // 'NONE' | 'PBS' | 'VEEAM'
   const [calcBackupGB, setCalcBackupGB] = useState(50);
   const [calcDedicatedIP, setCalcDedicatedIP] = useState(false);
 
@@ -972,19 +970,6 @@ export default function BillingPreview({ user, onNavigateRates }) {
                   />
                 </div>
               )}
-              {false && (<>
-              <label className="form-label">Solusi Backup & Disaster Recovery</label>
-              <select 
-                className="form-select"
-                value={calcBackup}
-                onChange={(e) => setCalcBackup(e.target.value)}
-              >
-                <option value="NONE">Tanpa Lisensi Backup Tambahan (Backup Manual)</option>
-                <option value="PBS">Proxmox Backup Server (BCK-PBS) — Deduplikasi & Enkripsi</option>
-                <option value="VEEAM">Veeam Backup & Replication (BCK-VEEAM) — Enterprise Universal License</option>
-              </select></>)}
-              {false && <select>
-              </select>
             </div>
 
             {/* Dedicated Public IP */}

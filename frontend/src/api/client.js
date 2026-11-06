@@ -190,11 +190,34 @@ class ApiClient {
     });
   }
 
-  async triggerVMBackup(id, backupMode = '') {
+  async triggerVMBackup(id, payloadOrMode = '') {
+    const body = typeof payloadOrMode === 'string'
+      ? { backup_mode: payloadOrMode }
+      : (payloadOrMode || {});
     return this.request(`/vms/${id}/backup`, {
       method: 'POST',
-      body: JSON.stringify({ backup_mode: backupMode }),
+      body: JSON.stringify(body),
     });
+  }
+
+  async getVMBackups(id) {
+    return this.request(`/vms/${id}/backups`);
+  }
+
+  async getAllBackups() {
+    return this.request('/backups');
+  }
+
+  async restoreVMBackup(id, backupId, payload = { start_after: true }) {
+    return this.request(`/vms/${id}/backups/${backupId}/restore`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteVMBackup(id, backupId) {
+    return this.request(`/vms/${id}/backups/${backupId}`, {
+      method: 'DELETE',
     });
   }
 
