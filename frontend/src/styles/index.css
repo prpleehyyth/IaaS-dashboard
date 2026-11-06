@@ -954,6 +954,27 @@ input[type="range"] {
   accent-color: #1e3a8a;
 }
 
+.error-banner {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* ================================================================ ANIMATIONS */
 @keyframes fadeIn {
   from { opacity: 0; }

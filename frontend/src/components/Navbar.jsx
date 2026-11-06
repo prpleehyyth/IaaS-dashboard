@@ -4,6 +4,7 @@ import {
   LayoutDashboard, 
   Server, 
   HardDrive, 
+  Database,
   Receipt, 
   Users, 
   LogOut, 
@@ -25,6 +26,7 @@ export default function Navbar({ activeTab, setActiveTab, user, onSwitchRole, on
       { id: 'clusters', label: 'Cluster & Host', title: 'Topologi Cluster & Server Fisik (Host)', icon: Server },
     ] : []),
     { id: 'vms', label: 'Virtual Machines', title: 'Daftar Virtual Machines', icon: HardDrive },
+    { id: 'backups', label: 'Backup & Restore', title: 'Pusat Backup (Warm/Cold) & Restore Mandiri (PBS / NetApp / Veeam)', icon: Database },
     ...(isAdmin ? [
       { id: 'users', label: 'Users', title: 'Manajemen Pengguna & Akses VM', icon: Users },
       { id: 'billing-rates', label: 'Atur Tarif', title: 'Atur Tarif CPU, Storage & Network', icon: Sliders },

@@ -13,6 +13,7 @@ import LoginModal from './components/LoginModal';
 import RebuildVMModal from './components/RebuildVMModal';
 import VMResourceModal from './components/VMResourceModal';
 import VMBackupModal from './components/VMBackupModal';
+import BackupCenter from './components/BackupCenter';
 import VMDetail from './components/VMDetail';
 import ClusterDetail from './components/ClusterDetail';
 import { api } from './api/client';
@@ -65,7 +66,7 @@ export default function App() {
 
       setSummary(sumData);
       setClusters(isAdmin ? (clusterData || []) : []);
-      if (!isAdmin && (['clusters', 'users', 'pricing'].includes(activeTab) || selectedClusterId)) {
+      if (!isAdmin && (['clusters', 'users', 'billing-rates', 'billing'].includes(activeTab) || selectedClusterId)) {
         setActiveTab('overview');
         setSelectedClusterId(null);
       }
@@ -78,6 +79,10 @@ export default function App() {
         return true;
       });
       setVMs(uniqueVMs);
+      setBackupModalVM((prev) => prev ? (uniqueVMs.find((v) => v.id === prev.id) || prev) : null);
+      setEditingVM((prev) => prev ? (uniqueVMs.find((v) => v.id === prev.id) || prev) : null);
+      setResourceVM((prev) => prev ? (uniqueVMs.find((v) => v.id === prev.id) || prev) : null);
+      setRebuildVM((prev) => prev ? (uniqueVMs.find((v) => v.id === prev.id) || prev) : null);
 
       if (api.isAdmin()) {
         const [tenantData, userData] = await Promise.all([
@@ -324,6 +329,7 @@ export default function App() {
               handleDeleteVM(vm);
               setSelectedVMId(null);
             }}
+            onRefresh={loadData}
             showToast={showToast}
           />
         ) : selectedClusterId && user?.role === 'ADMIN' ? (
@@ -389,6 +395,17 @@ export default function App() {
                 onNavigateVM={(vid) => setSelectedVMId(vid)}
                 onBackupVM={handleBackupVM}
                 onDeleteVM={handleDeleteVM}
+              />
+            )}
+
+            {activeTab === 'backups' && (
+              <BackupCenter
+                vms={vms}
+                user={user}
+                onOpenBackupModal={(vm) => setBackupModalVM(vm)}
+                onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onRefresh={loadData}
+                showToast={showToast}
               />
             )}
 

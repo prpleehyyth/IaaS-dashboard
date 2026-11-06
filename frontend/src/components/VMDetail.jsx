@@ -39,12 +39,14 @@ export default function VMDetail({
   onOpenResourceModal, 
   onOpenBackupModal,
   onDeleteVM,
+  onRefresh,
   showToast 
 }) {
   const [vm, setVm] = useState(null);
   const [telemetry, setTelemetry] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
   const [billingReport, setBillingReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -57,9 +59,23 @@ export default function VMDetail({
   const [backupNotes, setBackupNotes] = useState('');
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [restoringBackupId, setRestoringBackupId] = useState(null);
+  const [confirmRestoreBackup, setConfirmRestoreBackup] = useState(null);
   const [startAfterRestore, setStartAfterRestore] = useState(true);
 
   const isAdmin = user?.role === 'ADMIN' || api.isAdmin();
+
+  const fetchVMBackups = async () => {
+    if (!vmId) return;
+    setBackupsLoading(true);
+    try {
+      const list = await api.getVMBackups(vmId);
+      setBackups(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.warn('Failed to refresh VM backups:', err);
+    } finally {
+      setBackupsLoading(false);
+    }
+  };
 
   const loadVMData = async () => {
     try {
@@ -115,6 +131,7 @@ export default function VMDetail({
       await api.executeVMAction(vm.id, action);
       if (showToast) showToast(`Perintah ${action} berhasil dikirim ke hypervisor`);
       await loadVMData();
+      if (onRefresh) onRefresh();
     } catch (err) {
       if (showToast) showToast(`Gagal mengeksekusi ${action}: ` + err.message, 'error');
     } finally {
@@ -135,6 +152,7 @@ export default function VMDetail({
       setBackupNotes('');
       if (showToast) showToast(res.message || `Backup ${backupModeInput} (${prov}) berhasil dibuat`);
       await loadVMData();
+      if (onRefresh) onRefresh();
     } catch (err) {
       if (showToast) showToast('Gagal membuat backup: ' + err.message, 'error');
     } finally {
@@ -143,14 +161,13 @@ export default function VMDetail({
   };
 
   const handleRestoreInline = async (backup) => {
-    if (!window.confirm(`Restore VM '${vm.name}' ke snapshot '${backup.snapshot_name}' (${backup.backup_provider} • ${backup.backup_mode})?`)) {
-      return;
-    }
     setRestoringBackupId(backup.id);
     try {
       const res = await api.restoreVMBackup(vm.id, backup.id, { start_after: startAfterRestore });
       if (showToast) showToast(res.message || `VM '${vm.name}' berhasil di-restore dari '${backup.snapshot_name}'`);
+      setConfirmRestoreBackup(null);
       await loadVMData();
+      if (onRefresh) onRefresh();
     } catch (err) {
       if (showToast) showToast('Gagal melakukan restore: ' + err.message, 'error');
     } finally {
@@ -164,8 +181,11 @@ export default function VMDetail({
       await api.deleteVMBackup(vm.id, backup.id);
       if (showToast) showToast(`Snapshot '${backup.snapshot_name}' berhasil dihapus`);
       await loadVMData();
+      if (onRefresh) onRefresh();
     } catch (err) {
       if (showToast) showToast('Gagal menghapus snapshot: ' + err.message, 'error');
+    } finally {
+      // done
     }
   };
 
@@ -740,6 +760,56 @@ export default function VMDetail({
               </button>
             </div>
 
+            {confirmRestoreBackup && (
+              <div style={{
+                background: '#fffbeb',
+                border: '2px solid #f59e0b',
+                borderRadius: '12px',
+                padding: '16px 18px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#b45309', fontSize: '0.94rem', marginBottom: '4px' }}>
+                      Konfirmasi Restore VM '{vm.name}'
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#78350f', marginBottom: '8px' }}>
+                      Target Snapshot: <code style={{ background: '#fef3c7', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{confirmRestoreBackup.snapshot_name}</code> ({confirmRestoreBackup.backup_provider} • {confirmRestoreBackup.backup_mode})
+                    </div>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#92400e' }}>
+                      <input
+                        type="checkbox"
+                        checked={startAfterRestore}
+                        onChange={(e) => setStartAfterRestore(e.target.checked)}
+                        style={{ accentColor: '#d97706', width: '15px', height: '15px' }}
+                      />
+                      <span>Nyalakan VM otomatis setelah proses Restore selesai (Auto-Start VM)</span>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setConfirmRestoreBackup(null)}
+                      disabled={restoringBackupId !== null}
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleRestoreInline(confirmRestoreBackup)}
+                      disabled={restoringBackupId !== null}
+                      style={{ background: '#d97706', borderColor: '#b45309' }}
+                    >
+                      <RotateCw size={12} className={restoringBackupId === confirmRestoreBackup.id ? 'spin' : ''} />
+                      <span>{restoringBackupId === confirmRestoreBackup.id ? 'Restoring...' : 'Ya, Eksekusi Restore'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {backups.length === 0 ? (
               <div style={{ padding: '32px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px dashed var(--border-subtle)' }}>
                 <Database size={32} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
@@ -808,7 +878,7 @@ export default function VMDetail({
                             {new Date(b.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
                           </div>
                           <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                            Oleh: {b.created_by || 'system'}
+                            Oleh: {b.created_by_name || 'Operator'}
                           </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
@@ -817,7 +887,7 @@ export default function VMDetail({
                               type="button"
                               className="btn btn-secondary btn-sm"
                               disabled={restoringBackupId === b.id}
-                              onClick={() => handleRestoreInline(b)}
+                              onClick={() => setConfirmRestoreBackup(b)}
                               style={{ color: '#059669', borderColor: '#a7f3d0', background: '#ecfdf5', fontWeight: 700 }}
                             >
                               <RotateCw size={12} className={restoringBackupId === b.id ? 'spin' : ''} />

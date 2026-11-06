@@ -181,7 +181,8 @@ export default function VMManagement({
               <th>Virtual Machine</th>
               <th>{isAdmin ? 'Hypervisor & Node' : 'Hypervisor'}</th>
               <th>IP & Networking</th>
-              <th>Compute, Storage & Backup</th>
+              <th>Compute & Storage</th>
+              <th>Backup & Restore</th>
               <th>Power State</th>
               <th style={{ textAlign: 'right' }}>Aksi & Kontrol</th>
             </tr>
@@ -189,7 +190,7 @@ export default function VMManagement({
           <tbody>
             {filteredVMs.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '50px 20px' }}>
+                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '50px 20px' }}>
                   <HardDrive size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px auto' }} />
                   <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
                     {vms.length === 0 
@@ -279,58 +280,16 @@ export default function VMManagement({
                     {/* Specs & Live Resource Usage */}
                     <td>
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', whiteSpace: 'nowrap' }}>
                           <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{vm.cpu_cores} vCPU</span>
                           <span style={{ color: 'var(--text-dim)' }}>•</span>
-                          <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB RAM</span>
+                          <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB</span>
                           <span style={{ color: 'var(--text-dim)' }}>•</span>
-                          <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
-                        </div>
-
-                        {/* Backup Add-On Badge & Snapshot Count */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
-                          {hasBackupAddon ? (
-                            <span
-                              onClick={() => onOpenBackupModal && onOpenBackupModal(vm)}
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                padding: '1px 7px',
-                                borderRadius: '4px',
-                                background: bMode === 'WARM' ? '#fffbeb' : '#eff6ff',
-                                color: bMode === 'WARM' ? '#d97706' : '#0284c7',
-                                border: `1px solid ${bMode === 'WARM' ? '#fde68a' : '#bae6fd'}`,
-                                cursor: onOpenBackupModal ? 'pointer' : 'default'
-                              }}
-                              title="Klik untuk membuka Backup & Restore Center"
-                            >
-                              {bProvider} • {bMode} ({vm.backup_quota_gb || vm.disk_gb} GB • {vm.backup_schedule || 'DAILY'})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                              Backup: Manual ({bProvider})
-                            </span>
-                          )}
-                          <span
-                            onClick={() => onOpenBackupModal && onOpenBackupModal(vm)}
-                            style={{
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: '4px',
-                              background: (vm.backup_count || 0) > 0 ? '#ecfdf5' : '#f1f5f9',
-                              color: (vm.backup_count || 0) > 0 ? '#059669' : '#64748b',
-                              border: `1px solid ${(vm.backup_count || 0) > 0 ? '#a7f3d0' : '#cbd5e1'}`,
-                              cursor: onOpenBackupModal ? 'pointer' : 'default'
-                            }}
-                            title="Lihat daftar backup & restore VM ini"
-                          >
-                            {vm.backup_count || 0} Backup
-                          </span>
+                          <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB</span>
                         </div>
 
                         {isRunning && fleetTelemetry[vm.id] && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', fontSize: '0.74rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', fontSize: '0.72rem' }}>
                             <span style={{ 
                               background: fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fef2f2' : '#eff6ff', 
                               border: `1px solid ${fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fecaca' : '#bfdbfe'}`,
@@ -356,12 +315,70 @@ export default function VMManagement({
                       </div>
                     </td>
 
+                    {/* Dedicated Backup & Restore Column */}
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                          {hasBackupAddon ? (
+                            <span
+                              style={{
+                                fontSize: '0.69rem',
+                                fontWeight: 800,
+                                padding: '2px 7px',
+                                borderRadius: '5px',
+                                background: bMode === 'WARM' ? '#fffbeb' : '#f0f9ff',
+                                color: bMode === 'WARM' ? '#b45309' : '#0369a1',
+                                border: `1px solid ${bMode === 'WARM' ? '#fde68a' : '#bae6fd'}`
+                              }}
+                            >
+                              {bMode === 'WARM' ? '🔥 WARM' : '❄️ COLD'} • {bProvider}
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: '0.69rem',
+                                fontWeight: 700,
+                                padding: '2px 7px',
+                                borderRadius: '5px',
+                                background: '#f1f5f9',
+                                color: '#475569',
+                                border: '1px solid #cbd5e1'
+                              }}
+                            >
+                              Manual • {bProvider}
+                            </span>
+                          )}
+                        </div>
+
+                        {(onOpenBackupModal || onBackupVM) && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            title={`Kelola Backup (Warm/Cold) & Restore mandiri via ${bProvider}`}
+                            disabled={isLoading}
+                            onClick={() => onOpenBackupModal ? onOpenBackupModal(vm) : handleAction(onBackupVM, vm)}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.74rem',
+                              color: '#0369a1',
+                              borderColor: '#bae6fd',
+                              background: '#f0f9ff',
+                              fontWeight: 700
+                            }}
+                          >
+                            <Database size={12} />
+                            <span>Backup &amp; Restore ({vm.backup_count || 0})</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
                     {/* Status */}
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                         <span className={`status-dot ${isRunning ? 'running' : 'stopped'}`}></span>
                         <span style={{ 
-                          fontSize: '0.84rem', 
+                          fontSize: '0.82rem', 
                           fontWeight: 700, 
                           color: isRunning ? '#059669' : 'var(--text-dim)' 
                         }}>
@@ -372,7 +389,7 @@ export default function VMManagement({
 
                     {/* VM Controls (Available to Admin & Non-Admin Operators) */}
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                      <div className="action-btn-group">
                         {/* Power Start / Stop */}
                         {isRunning ? (
                           <button
@@ -407,38 +424,21 @@ export default function VMManagement({
                           <RotateCw size={13} />
                         </button>
 
-                        {/* Open Backup & Restore Center (PBS for Proxmox / NetApp & Veeam for VMware) */}
-                        {(onOpenBackupModal || onBackupVM) && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            title={`Kelola Backup (Warm/Cold) & Restore via ${bProvider === 'VEEAM' ? 'Veeam Backup & Replication' : bProvider === 'NETAPP' ? 'NetApp ONTAP' : 'Proxmox Backup Server (PBS)'}`}
-                            disabled={isLoading}
-                            onClick={() => onOpenBackupModal ? onOpenBackupModal(vm) : handleAction(onBackupVM, vm)}
-                            style={{
-                              color: bMode === 'COLD' ? '#0284c7' : '#d97706',
-                              borderColor: bMode === 'COLD' ? '#bae6fd' : '#fde68a',
-                              background: bMode === 'COLD' ? '#f0f9ff' : '#fffbeb',
-                              fontWeight: 700
-                            }}
-                          >
-                            <Database size={13} />
-                            <span>Backup &amp; Restore ({vm.backup_count || 0})</span>
-                          </button>
-                        )}
-
-                        {/* Instalasi Ulang OS (Rebuild) - Available to Admin & Operator */}
+                        {/* Interactive Console */}
                         <button
-                          className="btn btn-secondary btn-sm"
-                          title="Instalasi Ulang OS (Rebuild) VM"
-                          onClick={() => onOpenRebuildModal && onOpenRebuildModal(vm)}
+                          className="btn btn-sm"
+                          title={isRunning ? "Buka Remote Web Console" : "Nyalakan VM terlebih dahulu untuk membuka console"}
+                          disabled={!isRunning}
+                          onClick={() => onOpenConsole(vm)}
                           style={{
-                            color: '#1e3a8a',
-                            borderColor: '#bfdbfe',
-                            background: '#eff6ff'
+                            background: isRunning ? '#eff6ff' : '#f8fafc',
+                            color: isRunning ? '#1e3a8a' : '#94a3b8',
+                            border: `1px solid ${isRunning ? '#bfdbfe' : '#e2e8f0'}`,
+                            cursor: isRunning ? 'pointer' : 'not-allowed'
                           }}
                         >
-                          <Disc size={13} />
-                          <span>Rebuild</span>
+                          <Terminal size={13} />
+                          <span>Console</span>
                         </button>
 
                         {/* Live Resource Monitor - Available to Admin & Operator */}
@@ -456,6 +456,21 @@ export default function VMManagement({
                           <span>Monitor</span>
                         </button>
 
+                        {/* Instalasi Ulang OS (Rebuild) - Available to Admin & Operator */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Instalasi Ulang OS (Rebuild) VM"
+                          onClick={() => onOpenRebuildModal && onOpenRebuildModal(vm)}
+                          style={{
+                            color: '#1e3a8a',
+                            borderColor: '#bfdbfe',
+                            background: '#eff6ff'
+                          }}
+                        >
+                          <Disc size={13} />
+                          <span>Rebuild</span>
+                        </button>
+
                         {/* View VM Detail */}
                         <button
                           className="btn btn-secondary btn-sm"
@@ -467,31 +482,12 @@ export default function VMManagement({
                           <span>Detail</span>
                         </button>
 
-                        {/* Interactive Console */}
-                        <button
-                          className="btn btn-sm"
-                          title={isRunning ? "Buka Remote Web Console" : "Nyalakan VM terlebih dahulu untuk membuka console"}
-                          disabled={!isRunning}
-                          onClick={() => onOpenConsole(vm)}
-                          style={{
-                            background: isRunning ? '#eff6ff' : 'rgba(255, 255, 255, 0.05)',
-                            color: isRunning ? '#1e3a8a' : '#64748b',
-                            border: `1px solid ${isRunning ? '#bfdbfe' : 'rgba(255, 255, 255, 0.1)'}`,
-                            boxShadow: isRunning ? '0 1px 3px rgba(30, 58, 138, 0.08)' : 'none',
-                            cursor: isRunning ? 'pointer' : 'not-allowed',
-                            opacity: isRunning ? 1 : 0.5
-                          }}
-                        >
-                          <Terminal size={14} color={isRunning ? "#1e3a8a" : "#64748b"} />
-                          <span>Console</span>
-                        </button>
-
                         {/* Admin-Only Actions: Edit Specs & Delete */}
                         {isAdmin && (
                           <>
                             <button
                               className="btn btn-secondary btn-sm"
-                              title="Edit VM Specs (Admin Only)"
+                              title="Edit VM Specs & Backup Add-On (Admin Only)"
                               onClick={() => onOpenEditModal(vm)}
                             >
                               <Edit3 size={13} />

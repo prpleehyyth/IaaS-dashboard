@@ -631,7 +631,7 @@ export default function DashboardOverview({
                         </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                        <div className="action-btn-group">
                           {isRunning ? (
                             <>
                               <button 
@@ -805,6 +805,9 @@ export default function DashboardOverview({
                 <option value="START_VM">START_VM</option>
                 <option value="STOP_VM">STOP_VM</option>
                 <option value="RESTART_VM">RESTART_VM</option>
+                <option value="BACKUP_VM">BACKUP_VM</option>
+                <option value="RESTORE_VM">RESTORE_VM</option>
+                <option value="DELETE_BACKUP">DELETE_BACKUP</option>
                 <option value="REBUILD_VM">REBUILD_VM</option>
                 <option value="CREATE_VM">CREATE_VM</option>
                 <option value="EDIT_VM">EDIT_VM</option>

@@ -193,6 +193,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
         setCpuCores(opt.cpu);
         setRamGB(opt.ram);
         setDiskGB(opt.disk);
+        setBackupQuotaGB(prev => Math.max(parseInt(prev, 10) || opt.disk, opt.disk));
       }
     }
     setStepError('');
@@ -214,6 +215,7 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
     const num = Math.max(10, Math.min(500, parseInt(val, 10) || 10));
     setCustomDisk(num);
     setDiskGB(num);
+    setBackupQuotaGB(prev => Math.max(parseInt(prev, 10) || num, num));
   };
 
   // Estimated Monthly Cost for selected resources based on official catalog formula
@@ -326,6 +328,13 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
       setSelectedNodeId(cluster.nodes[0].id);
     } else {
       setSelectedNodeId('');
+    }
+    if (cluster?.type === 'VMWARE') {
+      if (backupProvider !== 'NETAPP' && backupProvider !== 'VEEAM') {
+        setBackupProvider('NETAPP');
+      }
+    } else {
+      setBackupProvider('PBS');
     }
   };
 
@@ -1150,11 +1159,36 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                       Add-On Backup &amp; Restore Mandiri (Warm &amp; Cold):
                     </span>
                   </div>
-                  <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px' }}>
-                    {selectedCluster?.type === 'VMWARE'
-                      ? `vCenter • ${backupProvider === 'VEEAM' ? 'Veeam B&R' : 'NetApp ONTAP'}`
-                      : 'Proxmox VE • Proxmox Backup Server (PBS)'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {clusters.length > 1 && (
+                      <select
+                        value={selectedClusterId}
+                        onChange={(e) => handleClusterChange(e.target.value)}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.74rem',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#ffffff',
+                          color: 'var(--text-main)',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                        title="Pilih Target Cluster Hypervisor"
+                      >
+                        {clusters.map(c => (
+                          <option key={c.id} value={c.id}>
+                            Cluster: {c.name} ({c.type})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px' }}>
+                      {selectedCluster?.type === 'VMWARE'
+                        ? `vCenter • ${backupProvider === 'VEEAM' ? 'Veeam B&R' : 'NetApp ONTAP'}`
+                        : 'Proxmox VE • Proxmox Backup Server (PBS)'}
+                    </span>
+                  </div>
                 </div>
 
                 {selectedCluster?.type === 'VMWARE' && (
