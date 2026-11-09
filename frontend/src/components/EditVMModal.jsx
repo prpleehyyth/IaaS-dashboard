@@ -34,9 +34,9 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
       <div className="modal-content" style={{ maxWidth: '540px' }}>
         <div className="modal-header">
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Reconfigure Vessel Specifications</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Ubah Spesifikasi Virtual Machine</h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Modify vCPU, Memory, and Storage for {vm.name}
+              Atur ulang vCPU, Memory, dan Storage untuk {vm.name}
             </p>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ padding: '6px' }}>
@@ -54,7 +54,7 @@ export default function EditVMModal({ vm, onClose, onUpdate }) {
             )}
 
             <div className="form-group">
-              <label className="form-label">Virtual Machine Vessel Name</label>
+              <label className="form-label">Nama Virtual Machine</label>
               <input 
                 type="text" 
                 className="form-input" 

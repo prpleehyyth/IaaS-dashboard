@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"iaas-dashboard/internal/middleware"
 	"iaas-dashboard/internal/models"
 	"iaas-dashboard/internal/services"
 
@@ -18,7 +19,10 @@ func NewClusterHandler(clusterService *services.ClusterService) *ClusterHandler 
 }
 
 func (h *ClusterHandler) GetDashboardSummary(c *gin.Context) {
-	summary, err := h.clusterService.GetDashboardSummary(c.Request.Context())
+	userID := middleware.GetUserID(c)
+	role := middleware.GetUserRole(c)
+
+	summary, err := h.clusterService.GetDashboardSummary(c.Request.Context(), userID, role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch dashboard summary: " + err.Error()})
 		return
@@ -27,6 +31,12 @@ func (h *ClusterHandler) GetDashboardSummary(c *gin.Context) {
 }
 
 func (h *ClusterHandler) GetAllClusters(c *gin.Context) {
+	role := middleware.GetUserRole(c)
+	if role != models.RoleAdmin {
+		c.JSON(http.StatusOK, []models.Cluster{})
+		return
+	}
+
 	clusters, err := h.clusterService.GetAllClustersWithNodes(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve clusters: " + err.Error()})
@@ -36,6 +46,12 @@ func (h *ClusterHandler) GetAllClusters(c *gin.Context) {
 }
 
 func (h *ClusterHandler) GetCluster(c *gin.Context) {
+	role := middleware.GetUserRole(c)
+	if role != models.RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: operators cannot view cluster hosts"})
+		return
+	}
+
 	clusterID := c.Param("id")
 	cluster, err := h.clusterService.GetClusterByID(c.Request.Context(), clusterID)
 	if err != nil {

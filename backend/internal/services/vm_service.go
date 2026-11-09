@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/database"
@@ -40,7 +41,7 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
 		                COALESCE(v.mac_address, '') as mac_address,
-		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
 		                v.created_by, v.created_at, v.updated_at,
@@ -52,12 +53,12 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
                  ORDER BY v.created_at DESC`
 		err = s.db.SelectContext(ctx, &vms, query)
 	} else {
-		// Operator sees only VMs explicitly assigned to their user account
-		query = `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
+		// Operator sees ONLY assigned VMs. If no VM is assigned, returns empty list.
+		query = `SELECT DISTINCT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
 		                COALESCE(v.mac_address, '') as mac_address,
-		                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
 		                v.created_by, v.created_at, v.updated_at,
@@ -70,6 +71,9 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
                  WHERE a.user_id = $1
                  ORDER BY v.created_at DESC`
 		err = s.db.SelectContext(ctx, &vms, query, userID)
+		if vms == nil {
+			vms = []models.VirtualMachine{}
+		}
 	}
 
 	return vms, err
@@ -81,7 +85,7 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -108,7 +112,7 @@ func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualM
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -132,7 +136,7 @@ func (s *VMService) GetAnyActiveVM(ctx context.Context) (*models.VirtualMachine,
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
 	                COALESCE(v.ip_address, '') as ip_address,
 	                COALESCE(v.mac_address, '') as mac_address,
-	                COALESCE(v.os_type, 'Ubuntu 22.04 LTS') as os_type,
+	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
 	                v.created_by, v.created_at, v.updated_at,
@@ -325,11 +329,10 @@ func (s *VMService) ExecutePowerAction(ctx context.Context, vmID, userID, tenant
 		return nil, err
 	}
 
-	// Operators can only manage VMs explicitly assigned to their account
+	// Operators can ONLY manage explicitly assigned VMs
 	if role == models.RoleOperator {
-		var isAssigned int
-		_ = s.db.GetContext(ctx, &isAssigned, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
-		if isAssigned == 0 {
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
 			return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
 		}
 	}
@@ -359,7 +362,7 @@ func (s *VMService) ExecutePowerAction(ctx context.Context, vmID, userID, tenant
 	var targetStatus models.VMStatus
 	var logAction string
 
-	switch action {
+	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "start":
 		if err := driver.StartVM(ctx, cluster, &node, vm.VMID); err != nil {
 			return nil, err
@@ -410,3 +413,208 @@ func (s *VMService) LogActivity(ctx context.Context, tenantID uuid.UUID, vmID *u
 	_, _ = s.db.NamedExecContext(ctx, `INSERT INTO vm_activity_logs (id, tenant_id, vm_id, user_id, action, status, details, created_at)
         VALUES (:id, :tenant_id, :vm_id, :user_id, :action, :status, :details, :created_at)`, log)
 }
+
+func (s *VMService) RebuildVM(ctx context.Context, vmID, userID, tenantID uuid.UUID, role models.UserRole, req models.RebuildVMRequest) (*models.VirtualMachine, error) {
+	vm, err := s.GetVMByID(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Operators can ONLY rebuild explicitly assigned VMs
+	if role == models.RoleOperator {
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, errors.New("access denied: this virtual machine is not assigned to your operator account")
+		}
+	}
+
+	lockKey := fmt.Sprintf("vm:%s:power", vmID.String())
+	locked, _ := s.redis.AcquireLock(ctx, lockKey, 20*time.Second)
+	if !locked {
+		return nil, errors.New("an operation is already in progress for this virtual machine")
+	}
+	defer s.redis.ReleaseLock(ctx, lockKey)
+
+	cluster, err := s.getClusterSafely(ctx, vm.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("cluster '%s' not found for VM: %w", vm.ClusterID, err)
+	}
+
+	var node models.Node
+	if vm.NodeID != "" {
+		_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+	}
+	if node.ID == "" {
+		node.ID = vm.NodeID
+	}
+
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	if err := driver.RebuildVM(ctx, cluster, &node, vm.VMID, req); err != nil {
+		return nil, fmt.Errorf("hypervisor OS rebuild failed: %w", err)
+	}
+
+	targetStatus := models.VMStatusStopped
+	if req.StartAfter {
+		targetStatus = models.VMStatusRunning
+	}
+
+	vm.Status = targetStatus
+	vm.OSType = req.OSType
+	vm.UpdatedAt = time.Now()
+
+	_, err = s.db.ExecContext(ctx, `UPDATE virtual_machines SET status = $1, os_type = $2, updated_at = $3 WHERE id = $4`,
+		vm.Status, vm.OSType, vm.UpdatedAt, vm.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "REBUILD_VM", "SUCCESS",
+		fmt.Sprintf("OS Reinstalled with '%s' (ISO: %s, Boot: %v)", req.OSType, req.ISOImage, req.StartAfter))
+
+	return vm, nil
+}
+
+func (s *VMService) GetVMTelemetry(ctx context.Context, vmID, userID, tenantID uuid.UUID, role models.UserRole) (*models.VMTelemetry, error) {
+	vm, err := s.GetVMByID(ctx, vmID)
+	if err != nil {
+		return nil, err
+	}
+
+	if role == models.RoleOperator {
+		if vm.TenantID != tenantID {
+			return nil, errors.New("access denied: cannot access VM telemetry of another organization")
+		}
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, errors.New("access denied: this virtual machine is not assigned to your account")
+		}
+	}
+
+	cluster, err := s.getClusterSafely(ctx, vm.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	var node models.Node
+	if vm.NodeID != "" {
+		_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+	}
+
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	return driver.GetVMTelemetry(ctx, cluster, &node, vm.VMID, vm)
+}
+
+func (s *VMService) ListFleetTelemetry(ctx context.Context, tenantID, userID uuid.UUID, role models.UserRole) ([]models.VMTelemetry, error) {
+	vms, err := s.ListVMs(ctx, tenantID, userID, role)
+	if err != nil {
+		return nil, err
+	}
+
+	telemetryList := make([]models.VMTelemetry, 0, len(vms))
+	for _, vm := range vms {
+		cluster, _ := s.getClusterSafely(ctx, vm.ClusterID)
+		var node models.Node
+		if vm.NodeID != "" {
+			_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+		}
+		driver := s.driverFactory.GetDriverForCluster(cluster)
+		tel, err := driver.GetVMTelemetry(ctx, cluster, &node, vm.VMID, &vm)
+		if err == nil && tel != nil {
+			telemetryList = append(telemetryList, *tel)
+		}
+	}
+
+	return telemetryList, nil
+}
+
+func (s *VMService) GetAuditLogs(ctx context.Context, userID uuid.UUID, role models.UserRole, page, limit int, search, action, status string, exportAll bool) (*models.AuditLogsResponse, error) {
+	if exportAll {
+		limit = 2000
+		page = 1
+	} else {
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 {
+			limit = 10
+		}
+		if limit > 200 {
+			limit = 200
+		}
+	}
+	offset := (page - 1) * limit
+
+	baseFrom := `FROM vm_activity_logs l
+                 LEFT JOIN users u ON l.user_id = u.id
+                 LEFT JOIN virtual_machines v ON l.vm_id = v.id`
+
+	whereClauses := []string{"1=1"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if role != models.RoleAdmin {
+		whereClauses = append(whereClauses, fmt.Sprintf("(l.user_id = $%d OR l.vm_id IN (SELECT vm_id FROM user_vm_assignments WHERE user_id = $%d))", argIdx, argIdx))
+		args = append(args, userID)
+		argIdx++
+	}
+
+	if search != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(l.details ILIKE $%d OR COALESCE(v.name, '') ILIKE $%d OR COALESCE(u.username, '') ILIKE $%d)", argIdx, argIdx, argIdx))
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	if action != "" && action != "ALL" {
+		whereClauses = append(whereClauses, fmt.Sprintf("l.action = $%d", argIdx))
+		args = append(args, action)
+		argIdx++
+	}
+
+	if status != "" && status != "ALL" {
+		whereClauses = append(whereClauses, fmt.Sprintf("l.status = $%d", argIdx))
+		args = append(args, status)
+		argIdx++
+	}
+
+	whereSQL := strings.Join(whereClauses, " AND ")
+
+	var total int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) %s WHERE %s", baseFrom, whereSQL)
+	if err := s.db.GetContext(ctx, &total, countQuery, args...); err != nil {
+		return nil, err
+	}
+
+	query := fmt.Sprintf(`SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+                                 COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+                          %s
+                          WHERE %s
+                          ORDER BY l.created_at DESC
+                          LIMIT $%d OFFSET $%d`, baseFrom, whereSQL, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	logs := []models.VMActivityLog{}
+	if err := s.db.SelectContext(ctx, &logs, query, args...); err != nil {
+		return nil, err
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &models.AuditLogsResponse{
+		Logs:       logs,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// CheckOperatorVMAccess checks whether an operator has been explicitly assigned to manage a specific VM
+func (s *VMService) CheckOperatorVMAccess(ctx context.Context, userID, vmID uuid.UUID) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
+	return count > 0, err
+}
+

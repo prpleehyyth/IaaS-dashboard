@@ -8,7 +8,11 @@ import (
 	"strings"
 	"time"
 
+<<<<<<< HEAD
 	"iaas-dashboard/internal/drivers"
+=======
+	"iaas-dashboard/internal/database"
+>>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
 	"iaas-dashboard/internal/models"
 
 	"github.com/google/uuid"
@@ -17,6 +21,7 @@ import (
 )
 
 type UserService struct {
+<<<<<<< HEAD
 	db            *sqlx.DB
 	driverFactory *drivers.DriverFactory
 }
@@ -32,6 +37,18 @@ func (s *UserService) getProxmoxClusters(ctx context.Context) []models.Cluster {
 	var clusters []models.Cluster
 	_ = s.db.SelectContext(ctx, &clusters, `SELECT * FROM clusters WHERE type = 'PROXMOX'`)
 	return clusters
+=======
+	db    *sqlx.DB
+	redis *database.RedisClient
+}
+
+func NewUserService(db *sqlx.DB, redisClients ...*database.RedisClient) *UserService {
+	var r *database.RedisClient
+	if len(redisClients) > 0 {
+		r = redisClients[0]
+	}
+	return &UserService{db: db, redis: r}
+>>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
 }
 
 func (s *UserService) ListUsers(ctx context.Context) ([]models.User, error) {
@@ -332,5 +349,8 @@ func (s *UserService) DeleteUser(ctx context.Context, userID, currentUserID uuid
 	}
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if err == nil && s.redis != nil {
+		_ = s.redis.RevokeUserTokens(ctx, userID.String(), 24*time.Hour)
+	}
 	return err
 }

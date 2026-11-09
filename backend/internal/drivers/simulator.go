@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -71,6 +72,57 @@ func (s *SimulatorDriver) DeleteVM(ctx context.Context, cluster *models.Cluster,
 	return nil
 }
 
+func (s *SimulatorDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.RebuildVMRequest) error {
+	time.Sleep(200 * time.Millisecond)
+	return nil
+}
+
+func (s *SimulatorDriver) GetVMTelemetry(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vm *models.VirtualMachine) (*models.VMTelemetry, error) {
+	if vm == nil {
+		return &models.VMTelemetry{}, nil
+	}
+
+	isRunning := vm.Status == models.VMStatusRunning
+	cpuPct := 0.0
+	ramUsedMB := 0
+	ramPct := 0.0
+	diskUsedGB := float64(vm.DiskGB) * 0.35
+	diskPct := 35.0
+	uptime := int64(0)
+	netIn := int64(0)
+	netOut := int64(0)
+
+	if isRunning {
+		seed := int(time.Now().Unix()/5) + vmid
+		randGen := rand.New(rand.NewSource(int64(seed)))
+		cpuPct = math.Round((5.0+randGen.Float64()*35.0)*10) / 10
+		ramPct = math.Round((25.0+randGen.Float64()*40.0)*10) / 10
+		ramUsedMB = int(float64(vm.RAMMB) * (ramPct / 100.0))
+		uptime = 3600*4 + int64((vmid*37)%86400)
+		netIn = int64(1024 * 1024 * (50 + (vmid % 200)))
+		netOut = int64(1024 * 1024 * (20 + (vmid % 100)))
+	}
+
+	return &models.VMTelemetry{
+		VMID:           vm.ID,
+		VMName:         vm.Name,
+		Status:         string(vm.Status),
+		CPUCores:       vm.CPUCores,
+		CPUUsagePct:    cpuPct,
+		RAMMB:          vm.RAMMB,
+		RAMUsageMB:     ramUsedMB,
+		RAMUsagePct:    ramPct,
+		DiskGB:         vm.DiskGB,
+		DiskUsageGB:    math.Round(diskUsedGB*10) / 10,
+		DiskUsagePct:   diskPct,
+		NetInBytes:     netIn,
+		NetOutBytes:    netOut,
+		DiskReadBytes:  netIn / 2,
+		DiskWriteBytes: netOut / 2,
+		UptimeSeconds:  uptime,
+	}, nil
+}
+
 func (s *SimulatorDriver) StartVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int) error {
 	// Simulate hypervisor power on delay
 	time.Sleep(100 * time.Millisecond)
@@ -125,6 +177,12 @@ func (s *SimulatorDriver) DiscoverVMs(ctx context.Context, cluster *models.Clust
 func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster, node *models.Node) ([]models.ISOImageInfo, error) {
 	return []models.ISOImageInfo{
 		{
+			VolID:    "local:iso/ubuntu-24.04-live-server-amd64.iso",
+			FileName: "ubuntu-24.04-live-server-amd64.iso",
+			SizeGB:   2.45,
+			Storage:  "local",
+		},
+		{
 			VolID:    "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
 			FileName: "ubuntu-22.04.4-live-server-amd64.iso",
 			SizeGB:   1.97,
@@ -137,9 +195,21 @@ func (s *SimulatorDriver) ListISOs(ctx context.Context, cluster *models.Cluster,
 			Storage:  "local",
 		},
 		{
+			VolID:    "local:iso/rocky-9.3-x86_64-minimal.iso",
+			FileName: "rocky-9.3-x86_64-minimal.iso",
+			SizeGB:   1.82,
+			Storage:  "local",
+		},
+		{
 			VolID:    "local:iso/alpine-standard-3.19.1-x86_64.iso",
 			FileName: "alpine-standard-3.19.1-x86_64.iso",
 			SizeGB:   0.21,
+			Storage:  "local",
+		},
+		{
+			VolID:    "local:iso/Windows_Server_2022_x64.iso",
+			FileName: "Windows_Server_2022_x64.iso",
+			SizeGB:   4.85,
 			Storage:  "local",
 		},
 	}, nil

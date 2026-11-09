@@ -28,7 +28,7 @@ func NewAuthService(db *sqlx.DB, jwtSecret string) *AuthService {
 func (s *AuthService) Authenticate(ctx context.Context, username, password string) (*models.LoginResponse, error) {
 	var user models.User
 	query := `SELECT id, tenant_id, username, email, password_hash, full_name, role, status, created_at, updated_at 
-              FROM users WHERE username = $1 LIMIT 1`
+              FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`
 
 	err := s.db.GetContext(ctx, &user, query, username)
 	if err != nil {
@@ -42,24 +42,8 @@ func (s *AuthService) Authenticate(ctx context.Context, username, password strin
 		return nil, errors.New("user account is inactive or disabled")
 	}
 
-	// Verify password
-	// Allow known default seed passwords or bcrypt match
-	isMatch := false
-	if (username == "admin" && password == "admin123") ||
-		(username == "operator" && password == "operator123") ||
-		(username == "devops-lead" && password == "devops123") ||
-		(username == "db-admin" && password == "dbadmin123") ||
-		(username == "frontend-dev" && password == "frontend123") ||
-		(username == "sandbox-user" && password == "sandbox123") {
-		isMatch = true
-	} else {
-		err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-		if err == nil {
-			isMatch = true
-		}
-	}
-
-	if !isMatch {
+	// Verify password strictly using bcrypt hash
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
 

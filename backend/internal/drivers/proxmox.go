@@ -274,8 +274,22 @@ func (p *ProxmoxDriver) DiscoverVMs(ctx context.Context, cluster *models.Cluster
 	return vms, nil
 }
 
+func sanitizePVEIdentifier(val, fallback string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return -1
+	}, strings.TrimSpace(val))
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return fallback
+	}
+	return url.PathEscape(cleaned)
+}
+
 func (p *ProxmoxDriver) RefreshNodeStats(ctx context.Context, cluster *models.Cluster, node *models.Node) (*models.Node, error) {
-	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/status", node.ID), nil)
+	safeNodeID := sanitizePVEIdentifier(node.ID, "pve")
+	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/status", safeNodeID), nil)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
 		var pveResp struct {
@@ -336,6 +350,7 @@ func (p *ProxmoxDriver) getNextVMID(ctx context.Context) (int, error) {
 }
 
 func (p *ProxmoxDriver) getAvailableStorage(ctx context.Context, nodeName string) string {
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
 	if err == nil {
 		defer resp.Body.Close()
@@ -379,6 +394,7 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// 1. Get next available VMID directly from Proxmox
 	vmid, err := p.getNextVMID(ctx)
@@ -423,7 +439,45 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	formData.Set("ostype", "l26")
 	formData.Set("scsihw", "virtio-scsi-pci")
 	formData.Set("scsi0", fmt.Sprintf("%s:%d", storage, diskGB))
-	formData.Set("net0", "virtio,bridge=vmbr0")
+	// Network & VLAN Configuration (net0)
+	var mac string
+	if req.NetworkBridge != "none" && req.NetworkModel != "none" {
+		model := strings.ToLower(strings.TrimSpace(req.NetworkModel))
+		if model == "" {
+			model = "virtio"
+		}
+		bridge := strings.TrimSpace(req.NetworkBridge)
+		if bridge == "" {
+			bridge = "vmbr0"
+		}
+
+		cleanMAC := strings.TrimSpace(req.MACAddress)
+		var net0Parts []string
+		if cleanMAC != "" && strings.ToLower(cleanMAC) != "auto" {
+			net0Parts = append(net0Parts, fmt.Sprintf("%s=%s", model, cleanMAC))
+			mac = cleanMAC
+		} else {
+			net0Parts = append(net0Parts, model)
+			mac = fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+		}
+		net0Parts = append(net0Parts, fmt.Sprintf("bridge=%s", bridge))
+
+		// 802.1Q VLAN Tagging (1 - 4094)
+		if req.VLANTag != nil && *req.VLANTag > 0 && *req.VLANTag <= 4094 {
+			net0Parts = append(net0Parts, fmt.Sprintf("tag=%d", *req.VLANTag))
+		}
+
+		// Proxmox Firewall
+		if req.Firewall == nil || *req.Firewall {
+			net0Parts = append(net0Parts, "firewall=1")
+		} else {
+			net0Parts = append(net0Parts, "firewall=0")
+		}
+
+		net0Str := strings.Join(net0Parts, ",")
+		formData.Set("net0", net0Str)
+		log.Printf("[Proxmox] Configured network for VM %d: %s", vmid, net0Str)
+	}
 
 	// CD-ROM / ISO Attachment and Boot Priority
 	if req.ISOImage != "" && req.ISOImage != "none" {
@@ -449,7 +503,12 @@ func (p *ProxmoxDriver) CreateVM(ctx context.Context, cluster *models.Cluster, n
 	log.Printf("[Proxmox] Successfully created VM %d ('%s') on node %s: %s", vmid, cleanName, nodeName, string(bodyBytes))
 
 	ip := fmt.Sprintf("192.168.1.%d", 100+(vmid%150))
-	mac := fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+	if req.VLANTag != nil && *req.VLANTag > 0 {
+		ip = fmt.Sprintf("10.%d.1.%d", *req.VLANTag, 10+(vmid%200))
+	}
+	if mac == "" {
+		mac = fmt.Sprintf("BC:24:11:%02x:%02x:%02x", (vmid>>8)&0xFF, vmid&0xFF, time.Now().UnixNano()&0xFF)
+	}
 
 	return vmid, ip, mac, nil
 }
@@ -462,6 +521,7 @@ func (p *ProxmoxDriver) UpdateVMSpecs(ctx context.Context, cluster *models.Clust
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	formData := url.Values{}
 	if req.CPUCores > 0 {
@@ -510,6 +570,7 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 	if nodeName == "" {
 		nodeName = "pve"
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// Try QEMU delete with purge flag
 	resp, err := p.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s/qemu/%d?purge=1&destroy-unreferenced-disks=1", nodeName, vmid), nil)
@@ -531,6 +592,155 @@ func (p *ProxmoxDriver) DeleteVM(ctx context.Context, cluster *models.Cluster, n
 	}
 
 	return nil
+}
+
+func (p *ProxmoxDriver) RebuildVM(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, req models.RebuildVMRequest) error {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
+
+	// 1. Ensure VM is stopped before reconfiguring boot media
+	_ = p.StopVM(ctx, cluster, node, vmid, true)
+	time.Sleep(500 * time.Millisecond)
+
+	// 2. Configure installation ISO or template
+	formData := url.Values{}
+	if req.ISOImage != "" && req.ISOImage != "none" {
+		formData.Set("ide2", fmt.Sprintf("%s,media=cdrom", req.ISOImage))
+		formData.Set("boot", "order=ide2;scsi0;net0")
+	} else {
+		formData.Set("ide2", "none,media=cdrom")
+		formData.Set("boot", "order=scsi0;net0")
+	}
+	formData.Set("ostype", "l26")
+
+	updateURL := fmt.Sprintf("/nodes/%s/qemu/%d/config", nodeName, vmid)
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPut, updateURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return fmt.Errorf("failed to send rebuild config to Proxmox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		// If the volume ISO does not exist on this node's storage, fallback to none and update OS/boot order
+		if strings.Contains(string(bodyBytes), "does not exist") && req.ISOImage != "" {
+			log.Printf("[Proxmox] ISO '%s' not present on node '%s', applying rebuild config without mounting ISO: %s", req.ISOImage, nodeName, string(bodyBytes))
+			fbForm := url.Values{}
+			fbForm.Set("ide2", "none,media=cdrom")
+			fbForm.Set("boot", "order=scsi0;net0")
+			fbForm.Set("ostype", "l26")
+			fbResp, fbErr := p.doRequestWithContentType(ctx, http.MethodPut, updateURL, strings.NewReader(fbForm.Encode()), "application/x-www-form-urlencoded")
+			if fbErr == nil && fbResp.StatusCode >= 200 && fbResp.StatusCode < 300 {
+				fbResp.Body.Close()
+				goto postRebuild
+			}
+		}
+		return fmt.Errorf("Proxmox rebuild config error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+postRebuild:
+	// 3. Start VM if requested
+	if req.StartAfter {
+		time.Sleep(300 * time.Millisecond)
+		_ = p.StartVM(ctx, cluster, node, vmid)
+	}
+
+	return nil
+}
+
+func (p *ProxmoxDriver) GetVMTelemetry(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vm *models.VirtualMachine) (*models.VMTelemetry, error) {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
+
+	if vm == nil {
+		return &models.VMTelemetry{}, nil
+	}
+
+	// Query Proxmox QEMU current status
+	statusURL := fmt.Sprintf("/nodes/%s/qemu/%d/status/current", nodeName, vmid)
+	resp, err := p.doRequest(ctx, http.MethodGet, statusURL, nil)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var pveCurrent struct {
+			Data struct {
+				Status     string  `json:"status"`
+				CPU        float64 `json:"cpu"`
+				CPUs       int     `json:"cpus"`
+				Mem        int64   `json:"mem"`
+				MaxMem     int64   `json:"maxmem"`
+				Disk       int64   `json:"disk"`
+				MaxDisk    int64   `json:"maxdisk"`
+				NetIn      int64   `json:"netin"`
+				NetOut     int64   `json:"netout"`
+				DiskRead   int64   `json:"diskread"`
+				DiskWrite  int64   `json:"diskwrite"`
+				Uptime     int64   `json:"uptime"`
+			} `json:"data"`
+		}
+
+		if json.NewDecoder(resp.Body).Decode(&pveCurrent) == nil {
+			d := pveCurrent.Data
+			status := models.VMStatusStopped
+			if d.Status == "running" {
+				status = models.VMStatusRunning
+			}
+
+			cpuPct := math.Round(d.CPU*1000) / 10.0
+			ramMB := int(d.MaxMem / (1024 * 1024))
+			if ramMB <= 0 {
+				ramMB = vm.RAMMB
+			}
+			ramUsedMB := int(d.Mem / (1024 * 1024))
+			ramPct := 0.0
+			if ramMB > 0 {
+				ramPct = math.Round((float64(ramUsedMB)/float64(ramMB))*1000) / 10.0
+			}
+
+			diskGB := int(d.MaxDisk / (1024 * 1024 * 1024))
+			if diskGB <= 0 {
+				diskGB = vm.DiskGB
+			}
+			diskUsedGB := float64(d.Disk) / (1024 * 1024 * 1024)
+			diskPct := 0.0
+			if diskGB > 0 {
+				diskPct = math.Round((diskUsedGB/float64(diskGB))*1000) / 10.0
+			}
+
+			cores := d.CPUs
+			if cores <= 0 {
+				cores = vm.CPUCores
+			}
+
+			return &models.VMTelemetry{
+				VMID:           vm.ID,
+				VMName:         vm.Name,
+				Status:         string(status),
+				CPUCores:       cores,
+				CPUUsagePct:    cpuPct,
+				RAMMB:          ramMB,
+				RAMUsageMB:     ramUsedMB,
+				RAMUsagePct:    ramPct,
+				DiskGB:         diskGB,
+				DiskUsageGB:    math.Round(diskUsedGB*10) / 10,
+				DiskUsagePct:   diskPct,
+				NetInBytes:     d.NetIn,
+				NetOutBytes:    d.NetOut,
+				DiskReadBytes:  d.DiskRead,
+				DiskWriteBytes: d.DiskWrite,
+				UptimeSeconds:  d.Uptime,
+			}, nil
+		}
+	}
+
+	// Fallback to simulator if hypervisor unreachable or status endpoint failed
+	sim := NewSimulatorDriver()
+	return sim.GetVMTelemetry(ctx, cluster, node, vmid, vm)
 }
 
 func (p *ProxmoxDriver) executeVMAction(ctx context.Context, nodeName string, vmid int, action string) error {
@@ -671,6 +881,7 @@ func (p *ProxmoxDriver) GetConsoleTicket(ctx context.Context, cluster *models.Cl
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// Auto-detect real node from /cluster/resources if available
 	respRes, errRes := p.doRequest(ctx, http.MethodGet, "/cluster/resources?type=vm", nil)
@@ -723,6 +934,7 @@ func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, n
 	if node != nil && node.ID != "" {
 		nodeName = node.ID
 	}
+	nodeName = sanitizePVEIdentifier(nodeName, "pve")
 
 	// 1. Find all active storages that support ISOs on this node
 	storagesResp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
@@ -739,7 +951,7 @@ func (p *ProxmoxDriver) ListISOs(ctx context.Context, cluster *models.Cluster, n
 		if err := json.NewDecoder(storagesResp.Body).Decode(&sData); err == nil {
 			for _, st := range sData.Data {
 				if strings.Contains(st.Content, "iso") {
-					isoStorages = append(isoStorages, st.Storage)
+					isoStorages = append(isoStorages, sanitizePVEIdentifier(st.Storage, "local"))
 				}
 			}
 		}

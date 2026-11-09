@@ -3,8 +3,9 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
-	"strconv"
+	"net/url"
 	"strings"
 
 	"iaas-dashboard/internal/database"
@@ -19,7 +20,37 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all frontend origins in private cloud
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin == "" {
+			return true // Non-browser clients
+		}
+		parsedOrigin, err := url.Parse(origin)
+		if err != nil || (parsedOrigin.Scheme != "http" && parsedOrigin.Scheme != "https") {
+			log.Printf("[Security] Rejected malformed WebSocket Origin: %s", origin)
+			return false
+		}
+		originHost := strings.ToLower(parsedOrigin.Hostname())
+		reqHost := strings.ToLower(r.Host)
+		if h, _, err := net.SplitHostPort(reqHost); err == nil {
+			reqHost = h
+		}
+
+		if originHost == reqHost ||
+			originHost == "localhost" ||
+			originHost == "127.0.0.1" ||
+			originHost == "::1" ||
+			originHost == "pal.co.id" ||
+			strings.HasSuffix(originHost, ".pal.co.id") {
+			return true
+		}
+
+		// Also allow RFC1918 private LAN origins when accessed over internal network
+		if ip := net.ParseIP(originHost); ip != nil && ip.IsPrivate() {
+			return true
+		}
+
+		log.Printf("[Security] Rejected cross-origin WebSocket connection from: %s (Host: %s)", origin, r.Host)
+		return false
 	},
 }
 
@@ -27,13 +58,15 @@ type ConsoleHandler struct {
 	consoleService *services.ConsoleService
 	vmService      *services.VMService
 	redis          *database.RedisClient
+	jwtSecret      string
 }
 
-func NewConsoleHandler(consoleService *services.ConsoleService, vmService *services.VMService, redis *database.RedisClient) *ConsoleHandler {
+func NewConsoleHandler(consoleService *services.ConsoleService, vmService *services.VMService, redis *database.RedisClient, jwtSecret string) *ConsoleHandler {
 	return &ConsoleHandler{
 		consoleService: consoleService,
 		vmService:      vmService,
 		redis:          redis,
+		jwtSecret:      jwtSecret,
 	}
 }
 
@@ -61,40 +94,60 @@ func (h *ConsoleHandler) RequestConsoleSession(c *gin.Context) {
 func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 	idStr := c.Param("id")
 	ticket := c.Query("ticket")
-
-	var vm *models.VirtualMachine
-	var err error
-
-	// 1. Try resolving VM by UUID from path parameter
-	if idStr != "" && idStr != "console" {
-		if vmID, parseErr := uuid.Parse(idStr); parseErr == nil {
-			vm, err = h.vmService.GetVMByID(c.Request.Context(), vmID)
+	tokenParam := c.Query("token")
+	if tokenParam == "" {
+		authHeader := c.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenParam = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 	}
 
-	// 2. If not found or idStr was an integer VMID (e.g. 103), resolve by VMID
-	if vm == nil && idStr != "" && idStr != "console" {
-		if vmid, intErr := strconv.Atoi(idStr); intErr == nil {
-			vm, _ = h.vmService.GetVMByVMID(c.Request.Context(), vmid)
-		}
-	}
+	var targetVMID uuid.UUID
+	var isAuthorized bool
 
-	// 3. If still not found and ticket is provided, try resolving from Redis ticket cache
-	if vm == nil && ticket != "" && h.redis != nil {
+	// 1. Authenticate via one-time session ticket stored in Redis
+	if ticket != "" && h.redis != nil {
 		cachedVMID, redisErr := h.redis.ValidateTicket(c.Request.Context(), ticket)
 		if redisErr == nil && cachedVMID != "" {
 			if parsedUUID, parseErr := uuid.Parse(cachedVMID); parseErr == nil {
-				vm, _ = h.vmService.GetVMByID(c.Request.Context(), parsedUUID)
+				// Verify URL parameter matches the VM authorized by the ticket
+				if reqUUID, reqErr := uuid.Parse(idStr); reqErr != nil || reqUUID == parsedUUID {
+					targetVMID = parsedUUID
+					isAuthorized = true
+				} else {
+					log.Printf("[Security] Console ticket VM mismatch: ticket for %s used on %s", parsedUUID, reqUUID)
+				}
 			}
 		}
 	}
 
-	// 4. Fallback: if idStr is empty or "console", find the primary active VM
-	if vm == nil {
-		vm, _ = h.vmService.GetAnyActiveVM(c.Request.Context())
+	// 2. Alternatively authenticate via JWT token query param or Bearer header
+	if !isAuthorized && tokenParam != "" && h.jwtSecret != "" {
+		claims, err := middleware.ValidateTokenString(tokenParam, h.jwtSecret)
+		if err == nil && claims != nil {
+			if parsedUUID, parseErr := uuid.Parse(idStr); parseErr == nil {
+				targetVMID = parsedUUID
+				// If role is OPERATOR, verify explicit assignment
+				if claims.Role == models.RoleOperator {
+					hasAccess, accessErr := h.vmService.CheckOperatorVMAccess(c.Request.Context(), claims.UserID, targetVMID)
+					if accessErr == nil && hasAccess {
+						isAuthorized = true
+					}
+				} else {
+					isAuthorized = true
+				}
+			}
+		}
 	}
 
-	if vm == nil {
+	// Reject unauthenticated or unauthorized WebSocket connections
+	if !isAuthorized {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: valid console session ticket or token is required"})
+		return
+	}
+
+	vm, err := h.vmService.GetVMByID(c.Request.Context(), targetVMID)
+	if err != nil || vm == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Virtual machine not found for console session"})
 		return
 	}
@@ -148,6 +201,10 @@ func (h *ConsoleHandler) HandleConsoleWebSocket(c *gin.Context) {
 					currentLine = currentLine[:len(currentLine)-1]
 					ws.WriteMessage(websocket.TextMessage, []byte("\b \b"))
 				}
+			} else if ch == 12 { // Ctrl+L (Clear screen)
+				ws.WriteMessage(websocket.TextMessage, []byte("\x1b[2J\x1b[H"))
+				prompt := fmt.Sprintf("\x1b[1;32mroot@%s\x1b[0m:\x1b[1;34m~#\x1b[0m %s", vm.Name, currentLine)
+				ws.WriteMessage(websocket.TextMessage, []byte(prompt))
 			} else if ch == 3 { // Ctrl+C
 				currentLine = ""
 				ws.WriteMessage(websocket.TextMessage, []byte("^C\r\n"))

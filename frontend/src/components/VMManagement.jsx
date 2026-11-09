@@ -15,19 +15,26 @@ import {
   HardDrive,
   ShieldAlert,
   Server,
-  Lock
+  Lock,
+  Disc,
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 
 export default function VMManagement({ 
   vms, 
   user, 
   clusters,
+  fleetTelemetry = {},
   onStartVM, 
   onStopVM, 
   onRestartVM, 
   onOpenConsole, 
   onOpenCreateModal, 
   onOpenEditModal, 
+  onOpenRebuildModal,
+  onOpenResourceModal,
+  onNavigateVM,
   onDeleteVM 
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,7 +69,7 @@ export default function VMManagement({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '26px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1 style={{ fontSize: '1.85rem', fontWeight: 800 }}>Maritime Virtual Machine Fleet</h1>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: 800 }}>Virtual Machines</h1>
             <span style={{ 
               fontSize: '0.85rem', 
               background: '#eff6ff', 
@@ -77,8 +84,8 @@ export default function VMManagement({
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
             {isAdmin 
-              ? 'Administrator Fleet Control: Full lifecycle privileges (Provision, Power, Edit Specs, Decommission, Console)' 
-              : 'VM Operator Control: Delegated vessel controls (Power On, Power Off, and Remote Web Console)'}
+              ? 'Administrator: Akses penuh siklus hidup VM (Provision, Power, Edit Specs, Rebuild OS, Console)' 
+              : 'VM Operator: Kontrol Virtual Machine yang Ditugaskan (Power On, Power Off, Remote Console, Monitor)'}
           </p>
         </div>
 
@@ -106,7 +113,7 @@ export default function VMManagement({
               fontSize: '0.84rem' 
             }}>
               <Lock size={15} color="#1e3a8a" />
-              <span>VM Provisioning reserved for Admiralty Admin</span>
+              <span>Pembuatan VM hanya dapat dilakukan oleh Administrator</span>
             </div>
           )}
         </div>
@@ -119,7 +126,7 @@ export default function VMManagement({
             <Search size={16} color="#1e3a8a" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
             <input 
               type="text" 
-              placeholder="Search by vessel name, IP address, or OS..."
+              placeholder="Cari berdasarkan nama VM, IP address, atau OS..."
               className="form-input"
               style={{ paddingLeft: '38px' }}
               value={searchTerm}
@@ -129,21 +136,23 @@ export default function VMManagement({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {/* Cluster Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Cluster:</span>
-            <select 
-              className="form-select" 
-              style={{ width: 'auto', padding: '7px 14px', fontSize: '0.84rem' }}
-              value={filterCluster}
-              onChange={(e) => setFilterCluster(e.target.value)}
-            >
-              <option value="ALL">All Clusters</option>
-              {clusters.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
+          {/* Cluster Filter (ADMIN ONLY) */}
+          {isAdmin && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Cluster:</span>
+              <select 
+                className="form-select" 
+                style={{ width: 'auto', padding: '7px 14px', fontSize: '0.84rem' }}
+                value={filterCluster}
+                onChange={(e) => setFilterCluster(e.target.value)}
+              >
+                <option value="ALL">All Clusters</option>
+                {clusters.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Status Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -167,12 +176,12 @@ export default function VMManagement({
         <table>
           <thead>
             <tr>
-              <th>Virtual Machine Vessel</th>
-              <th>Hypervisor & Node</th>
+              <th>Virtual Machine</th>
+              <th>{isAdmin ? 'Hypervisor & Node' : 'Hypervisor'}</th>
               <th>IP & Networking</th>
               <th>Compute & Storage</th>
               <th>Power State</th>
-              <th style={{ textAlign: 'right' }}>Vessel Controls</th>
+              <th style={{ textAlign: 'right' }}>Aksi & Kontrol</th>
             </tr>
           </thead>
           <tbody>
@@ -181,12 +190,14 @@ export default function VMManagement({
                 <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '50px 20px' }}>
                   <HardDrive size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px auto' }} />
                   <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                    {vms.length === 0 ? 'No Virtual Machines Deployed (Virgin State)' : 'No virtual machines match filter criteria'}
+                    {vms.length === 0 
+                      ? (isAdmin ? 'Belum Ada Virtual Machine (Virgin State)' : 'Belum Ada Virtual Machine yang Ditugaskan')
+                      : 'Tidak ada virtual machine yang cocok dengan filter pencarian'}
                   </div>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     {vms.length === 0 
-                      ? (isAdmin ? 'Deploy your first virtual machine vessel using the "+ Provision Virtual Machine" button above.' : 'No virtual machines are currently assigned to your account.')
-                      : 'Try adjusting your search terms or cluster filter.'}
+                      ? (isAdmin ? 'Deploy virtual machine pertama Anda menggunakan tombol "+ Provision Virtual Machine" di atas.' : 'Hubungi Administrator untuk memberikan penugasan akses VM.')
+                      : 'Coba sesuaikan kata kunci pencarian atau status filter.'}
                   </div>
                 </td>
               </tr>
@@ -215,22 +226,36 @@ export default function VMManagement({
                           <HardDrive size={19} />
                         </div>
                         <div>
-                          <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.98rem' }}>{vm.name}</div>
+                          <div 
+                            onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                            style={{ 
+                              fontWeight: 800, 
+                              color: 'var(--text-main)', 
+                              fontSize: '0.98rem',
+                              cursor: onNavigateVM ? 'pointer' : 'default',
+                              textDecoration: onNavigateVM ? 'underline dotted' : 'none'
+                            }}
+                            title="Buka Halaman Detail Virtual Machine"
+                          >
+                            {vm.name}
+                          </div>
                           <div style={{ fontSize: '0.78rem', color: '#1e3a8a' }}>{vm.os_type}</div>
                         </div>
                       </div>
                     </td>
 
-                    {/* Cluster & Node */}
+                    {/* Cluster & Node (Node hidden for operator) */}
                     <td>
                       <div>
                         <span className={isVMware ? 'badge-vmware' : 'badge-proxmox'} style={{ marginBottom: '4px' }}>
                           {vm.hypervisor_type}
                         </span>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
-                          <Server size={13} color="#1e3a8a" />
-                          <span>{vm.node_name || vm.node_id}</span>
-                        </div>
+                        {isAdmin && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                            <Server size={13} color="#1e3a8a" />
+                            <span>{vm.node_name || vm.node_id}</span>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -244,14 +269,40 @@ export default function VMManagement({
                       </div>
                     </td>
 
-                    {/* Specs */}
+                    {/* Specs & Live Resource Usage */}
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.84rem' }}>
-                        <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{vm.cpu_cores} vCPU</span>
-                        <span style={{ color: 'var(--text-dim)' }}>•</span>
-                        <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB RAM</span>
-                        <span style={{ color: 'var(--text-dim)' }}>•</span>
-                        <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                          <span style={{ color: '#1e3a8a', fontWeight: 700 }}>{vm.cpu_cores} vCPU</span>
+                          <span style={{ color: 'var(--text-dim)' }}>•</span>
+                          <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{Math.round(vm.ram_mb / 1024)} GB RAM</span>
+                          <span style={{ color: 'var(--text-dim)' }}>•</span>
+                          <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
+                        </div>
+                        {isRunning && fleetTelemetry[vm.id] && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', fontSize: '0.74rem' }}>
+                            <span style={{ 
+                              background: fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fef2f2' : '#eff6ff', 
+                              border: `1px solid ${fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#fecaca' : '#bfdbfe'}`,
+                              color: fleetTelemetry[vm.id].cpu_usage_pct > 80 ? '#dc2626' : '#1e3a8a',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700
+                            }}>
+                              CPU: {fleetTelemetry[vm.id].cpu_usage_pct}%
+                            </span>
+                            <span style={{ 
+                              background: fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#fef2f2' : '#f0fdf4', 
+                              border: `1px solid ${fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#fecaca' : '#bbf7d0'}`,
+                              color: fleetTelemetry[vm.id].ram_usage_pct > 85 ? '#dc2626' : '#166534',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700
+                            }}>
+                              RAM: {fleetTelemetry[vm.id].ram_usage_pct}%
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -269,9 +320,9 @@ export default function VMManagement({
                       </div>
                     </td>
 
-                    {/* Actions */}
+                    {/* VM Controls (Available to Admin & Non-Admin Operators) */}
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                         {/* Power Start / Stop */}
                         {isRunning ? (
                           <button
@@ -304,6 +355,47 @@ export default function VMManagement({
                           onClick={() => handleAction(onRestartVM, vm)}
                         >
                           <RotateCw size={13} />
+                        </button>
+
+                        {/* Instalasi Ulang OS (Rebuild) - Available to Admin & Operator */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Instalasi Ulang OS (Rebuild) VM"
+                          onClick={() => onOpenRebuildModal && onOpenRebuildModal(vm)}
+                          style={{
+                            color: '#1e3a8a',
+                            borderColor: '#bfdbfe',
+                            background: '#eff6ff'
+                          }}
+                        >
+                          <Disc size={13} />
+                          <span>Rebuild</span>
+                        </button>
+
+                        {/* Live Resource Monitor - Available to Admin & Operator */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Pantau Penggunaan Resource Langsung (CPU, RAM, Disk, Net)"
+                          onClick={() => onOpenResourceModal && onOpenResourceModal(vm)}
+                          style={{
+                            color: isRunning ? '#059669' : '#475569',
+                            borderColor: isRunning ? '#a7f3d0' : 'var(--border-subtle)',
+                            background: isRunning ? '#ecfdf5' : '#f8fafc'
+                          }}
+                        >
+                          <Activity size={13} />
+                          <span>Monitor</span>
+                        </button>
+
+                        {/* View VM Detail */}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Buka Halaman Detail Lengkap Virtual Machine"
+                          onClick={() => onNavigateVM && onNavigateVM(vm.id)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <ExternalLink size={13} />
+                          <span>Detail</span>
                         </button>
 
                         {/* Interactive Console */}

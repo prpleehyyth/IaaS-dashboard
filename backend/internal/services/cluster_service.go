@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
+	"iaas-dashboard/internal/config"
 	"iaas-dashboard/internal/database"
 	"iaas-dashboard/internal/drivers"
 	"iaas-dashboard/internal/models"
@@ -53,9 +56,87 @@ func (s *ClusterService) EnsureSchema(ctx context.Context) {
 		`UPDATE virtual_machines SET mac_address = '' WHERE mac_address IS NULL;`,
 		`UPDATE virtual_machines SET console_port = 0 WHERE console_port IS NULL;`,
 		`UPDATE virtual_machines SET vmid = 0 WHERE vmid IS NULL;`,
+
+		`DO $$
+		DECLARE
+		    rec RECORD;
+		    keeper_id UUID;
+		BEGIN
+		    FOR rec IN 
+		        SELECT cluster_id, vmid
+		        FROM virtual_machines
+		        WHERE vmid > 0
+		        GROUP BY cluster_id, vmid
+		        HAVING COUNT(*) > 1
+		    LOOP
+		        SELECT id INTO keeper_id
+		        FROM virtual_machines v
+		        WHERE v.cluster_id = rec.cluster_id AND v.vmid = rec.vmid
+		        ORDER BY 
+		            (SELECT COUNT(*) FROM user_vm_assignments a WHERE a.vm_id = v.id) DESC,
+		            (v.status = 'RUNNING') DESC,
+		            v.updated_at DESC,
+		            v.created_at DESC
+		        LIMIT 1;
+
+		        IF EXISTS (SELECT 1 FROM virtual_machines WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND status = 'RUNNING') THEN
+		            UPDATE virtual_machines SET status = 'RUNNING' WHERE id = keeper_id;
+		        END IF;
+
+		        UPDATE user_vm_assignments
+		        SET vm_id = keeper_id
+		        WHERE vm_id IN (
+		            SELECT id FROM virtual_machines 
+		            WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND id != keeper_id
+		        )
+		        AND NOT EXISTS (
+		            SELECT 1 FROM user_vm_assignments a2 
+		            WHERE a2.user_id = user_vm_assignments.user_id AND a2.vm_id = keeper_id
+		        );
+
+		        DELETE FROM user_vm_assignments
+		        WHERE vm_id IN (
+		            SELECT id FROM virtual_machines 
+		            WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND id != keeper_id
+		        );
+
+		        UPDATE resource_metering_samples
+		        SET vm_id = keeper_id
+		        WHERE vm_id IN (
+		            SELECT id FROM virtual_machines 
+		            WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND id != keeper_id
+		        );
+
+		        UPDATE vm_activity_logs
+		        SET vm_id = keeper_id
+		        WHERE vm_id IN (
+		            SELECT id FROM virtual_machines 
+		            WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND id != keeper_id
+		        );
+
+		        DELETE FROM virtual_machines
+		        WHERE cluster_id = rec.cluster_id AND vmid = rec.vmid AND id != keeper_id;
+		    END LOOP;
+		END $$;`,
+
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_vm_cluster_vmid ON virtual_machines (cluster_id, vmid) WHERE vmid > 0;`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m)
+	}
+
+	// Encrypt any existing plaintext cluster auth_secret records at rest
+	var existing []struct {
+		ID         string `db:"id"`
+		AuthSecret string `db:"auth_secret"`
+	}
+	if err := s.db.SelectContext(ctx, &existing, `SELECT id, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE auth_secret != ''`); err == nil {
+		for _, c := range existing {
+			if !strings.HasPrefix(c.AuthSecret, config.EncryptedSecretPrefix) {
+				enc := config.EncryptSecret(c.AuthSecret, "")
+				_, _ = s.db.ExecContext(ctx, `UPDATE clusters SET auth_secret = $1 WHERE id = $2`, enc, c.ID)
+			}
+		}
 	}
 }
 
@@ -130,9 +211,13 @@ func (s *ClusterService) GetClusterByID(ctx context.Context, clusterID string) (
 
 func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClusterRequest) (*models.Cluster, error) {
 	s.EnsureSchema(ctx)
+	if err := validateHypervisorEndpoint(req.Endpoint); err != nil {
+		return nil, err
+	}
 	if req.ID == "" {
 		req.ID = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 	}
+	encryptedSecret := config.EncryptSecret(req.AuthSecret, "")
 	query := `
 		INSERT INTO clusters (id, name, type, datacenter, endpoint, auth_user, auth_secret, insecure_ssl, status, total_cpu_cores, total_ram_gb, total_storage_tb, description, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ONLINE', $9, $10, $11, $12, $13)
@@ -148,7 +233,7 @@ func (s *ClusterService) CreateCluster(ctx context.Context, req models.CreateClu
 	var cluster models.Cluster
 	err := s.db.GetContext(ctx, &cluster, query,
 		req.ID, req.Name, req.Type, req.Datacenter, req.Endpoint,
-		req.AuthUser, req.AuthSecret, req.InsecureSSL,
+		req.AuthUser, encryptedSecret, req.InsecureSSL,
 		req.TotalCPUCores, req.TotalRAMGB, req.TotalStorageTB, req.Description, req.Version,
 	)
 	if err != nil {
@@ -235,15 +320,109 @@ func (s *ClusterService) DeleteNode(ctx context.Context, clusterID, nodeID strin
 	return nil
 }
 
+func validateHypervisorEndpoint(rawEndpoint string) error {
+	trimmed := strings.TrimSpace(rawEndpoint)
+	endpointLower := strings.ToLower(trimmed)
+	if !strings.HasPrefix(endpointLower, "http://") && !strings.HasPrefix(endpointLower, "https://") {
+		return errors.New("invalid endpoint protocol: must begin with http:// or https://")
+	}
+
+	parsedURL, err := url.Parse(trimmed)
+	if err != nil || parsedURL.Hostname() == "" {
+		return errors.New("invalid endpoint URL format")
+	}
+
+	host := strings.ToLower(parsedURL.Hostname())
+	port := parsedURL.Port()
+
+	// Block cloud metadata services and internal infrastructure services
+	blockedHosts := map[string]bool{
+		"169.254.169.254":          true,
+		"metadata.google.internal": true,
+		"metadata":                 true,
+		"postgres":                 true,
+		"iaas-postgres":            true,
+		"redis":                    true,
+		"iaas-redis":               true,
+		"backend":                  true,
+		"iaas-backend":             true,
+		"frontend":                 true,
+		"iaas-frontend":            true,
+	}
+	if blockedHosts[host] {
+		return errors.New("security violation: connection to internal or cloud metadata services is forbidden")
+	}
+
+	// Block sensitive internal ports (PostgreSQL, Redis, API, SSH)
+	blockedPorts := map[string]bool{
+		"5432": true,
+		"6379": true,
+		"8080": true,
+		"22":   true,
+	}
+	if blockedPorts[port] {
+		return fmt.Errorf("security violation: connection to restricted internal service port %s is forbidden", port)
+	}
+
+	// Check IP literal or DNS resolution against link-local & loopback ranges (allow port 8989 for local lab simulator)
+	ips, err := net.LookupIP(host)
+	if err == nil {
+		for _, ip := range ips {
+			if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || strings.HasPrefix(ip.String(), "169.254.") {
+				return errors.New("security violation: connection to link-local / cloud metadata IP range is forbidden")
+			}
+			if ip.IsLoopback() && port != "8989" {
+				return errors.New("security violation: connection to loopback interface is forbidden")
+			}
+		}
+	} else if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return errors.New("security violation: connection to link-local IP range is forbidden")
+		}
+		if ip.IsLoopback() && port != "8989" {
+			return errors.New("security violation: connection to loopback interface is forbidden")
+		}
+	}
+
+	return nil
+}
+
 func (s *ClusterService) TestClusterConnection(ctx context.Context, req models.TestClusterConnectionRequest) (*models.TestClusterConnectionResponse, error) {
-	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, req.AuthUser, req.AuthSecret, req.InsecureSSL, req.Datacenter)
+	if err := validateHypervisorEndpoint(req.Endpoint); err != nil {
+		return nil, err
+	}
+
+	authUser := req.AuthUser
+	authSecret := req.AuthSecret
+
+	// If secret was omitted (e.g. testing an already registered cluster from UI), load stored secret from DB
+	if authSecret == "" {
+		var stored struct {
+			AuthUser   string `db:"auth_user"`
+			AuthSecret string `db:"auth_secret"`
+		}
+		if req.ClusterID != "" {
+			_ = s.db.GetContext(ctx, &stored, `SELECT COALESCE(auth_user, '') as auth_user, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE id = $1 LIMIT 1`, req.ClusterID)
+		}
+		if stored.AuthSecret == "" && req.Endpoint != "" {
+			_ = s.db.GetContext(ctx, &stored, `SELECT COALESCE(auth_user, '') as auth_user, COALESCE(auth_secret, '') as auth_secret FROM clusters WHERE endpoint = $1 LIMIT 1`, req.Endpoint)
+		}
+		if stored.AuthSecret != "" {
+			authSecret = config.DecryptSecret(stored.AuthSecret, "")
+			if authUser == "" {
+				authUser = stored.AuthUser
+			}
+		}
+	}
+
+	driver := s.driverFactory.CreateDriver(req.Type, req.Endpoint, authUser, authSecret, req.InsecureSSL, req.Datacenter)
 	testCluster := &models.Cluster{
 		ID:          "test-cluster",
 		Type:        req.Type,
 		Endpoint:    req.Endpoint,
 		Datacenter:  req.Datacenter,
-		AuthUser:    req.AuthUser,
-		AuthSecret:  req.AuthSecret,
+		AuthUser:    authUser,
+		AuthSecret:  authSecret,
 		InsecureSSL: req.InsecureSSL,
 	}
 	return driver.TestConnection(ctx, testCluster)
@@ -305,14 +484,46 @@ func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*mo
 		_ = s.db.GetContext(ctx, &tenantID, `SELECT id FROM tenants LIMIT 1`)
 
 		for _, vm := range discoveredVMs {
-			vmQuery := `
-				INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type, ip_address, mac_address, console_port)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', '', 0)
-				ON CONFLICT (id) DO NOTHING
-			`
-			_, _ = s.db.ExecContext(ctx, vmQuery,
-				vm.ID, tenantID, cluster.ID, vm.NodeID, cluster.Type, vm.Name, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.VMID, vm.OSType,
-			)
+			if vm.VMID > 0 {
+				vmQuery := `
+					INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type, ip_address, mac_address, console_port, created_at, updated_at)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+					ON CONFLICT (cluster_id, vmid) WHERE vmid > 0 DO UPDATE SET
+						node_id = EXCLUDED.node_id,
+						name = EXCLUDED.name,
+						status = EXCLUDED.status,
+						cpu_cores = EXCLUDED.cpu_cores,
+						ram_mb = EXCLUDED.ram_mb,
+						disk_gb = EXCLUDED.disk_gb,
+						os_type = CASE WHEN virtual_machines.os_type = '' OR virtual_machines.os_type IS NULL THEN EXCLUDED.os_type ELSE virtual_machines.os_type END,
+						updated_at = CURRENT_TIMESTAMP
+				`
+				_, _ = s.db.ExecContext(ctx, vmQuery,
+					vm.ID, tenantID, cluster.ID, vm.NodeID, cluster.Type, vm.Name, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.VMID, vm.OSType,
+				)
+			} else {
+				// Fallback when VMID is 0: check existing by name in cluster
+				var existingID uuid.UUID
+				err := s.db.GetContext(ctx, &existingID, `SELECT id FROM virtual_machines WHERE cluster_id = $1 AND name = $2 LIMIT 1`, cluster.ID, vm.Name)
+				if err == nil && existingID != uuid.Nil {
+					_, _ = s.db.ExecContext(ctx, `
+						UPDATE virtual_machines SET
+							node_id = $1,
+							status = $2,
+							cpu_cores = $3,
+							ram_mb = $4,
+							disk_gb = $5,
+							updated_at = CURRENT_TIMESTAMP
+						WHERE id = $6
+					`, vm.NodeID, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, existingID)
+				} else {
+					_, _ = s.db.ExecContext(ctx, `
+						INSERT INTO virtual_machines (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, vmid, os_type, ip_address, mac_address, console_port, created_at, updated_at)
+						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+						ON CONFLICT (id) DO NOTHING
+					`, vm.ID, tenantID, cluster.ID, vm.NodeID, cluster.Type, vm.Name, vm.Status, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.VMID, vm.OSType)
+				}
+			}
 		}
 	}
 
@@ -330,6 +541,11 @@ func (s *ClusterService) SyncCluster(ctx context.Context, clusterID string) (*mo
 }
 
 func (s *ClusterService) ResetToVirgin(ctx context.Context) error {
+	cfg := config.Load()
+	if strings.EqualFold(cfg.HypervisorMode, "PRODUCTION") {
+		return errors.New("security violation: ResetToVirgin is disabled in PRODUCTION mode")
+	}
+
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -352,15 +568,7 @@ func (s *ClusterService) ResetToVirgin(ctx context.Context) error {
 	return tx.Commit()
 }
 
-func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.DashboardSummaryResponse, error) {
-	clusters, err := s.GetAllClustersWithNodes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var totalVMs, runningVMs, stoppedVMs int
-	var allocCPU, allocRAM, allocDisk int
-
+func (s *ClusterService) GetDashboardSummary(ctx context.Context, userID uuid.UUID, role models.UserRole) (*models.DashboardSummaryResponse, error) {
 	type vmCounts struct {
 		Total   int `db:"total"`
 		Running int `db:"running"`
@@ -371,44 +579,73 @@ func (s *ClusterService) GetDashboardSummary(ctx context.Context) (*models.Dashb
 	}
 
 	var vmc vmCounts
-	query := `SELECT 
-                COUNT(*) as total,
-                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running,
-                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped,
-                COALESCE(SUM(cpu_cores), 0) as cpu,
-                COALESCE(SUM(ram_mb), 0) as ram,
-                COALESCE(SUM(disk_gb), 0) as disk
-              FROM virtual_machines`
-
-	_ = s.db.GetContext(ctx, &vmc, query)
-
-	totalVMs = vmc.Total
-	runningVMs = vmc.Running
-	stoppedVMs = vmc.Stopped
-	allocCPU = vmc.CPU
-	allocRAM = vmc.RAM / 1024
-	allocDisk = vmc.Disk
-
-	// Compute cluster totals
+	var clusters []models.Cluster
 	var totalNodes, totalCPU, totalRAM int
 	var totalStorage float64
+	recentLogs := []models.VMActivityLog{}
 
-	for _, c := range clusters {
-		totalNodes += len(c.Nodes)
-		totalCPU += c.TotalCPUCores
-		totalRAM += c.TotalRAMGB
-		totalStorage += c.TotalStorageTB
+	if role == models.RoleAdmin {
+		allClusters, err := s.GetAllClustersWithNodes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		clusters = allClusters
+
+		query := `SELECT 
+	                COUNT(*) as total,
+	                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running,
+	                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped,
+	                COALESCE(SUM(cpu_cores), 0) as cpu,
+	                COALESCE(SUM(ram_mb), 0) as ram,
+	                COALESCE(SUM(disk_gb), 0) as disk
+	              FROM virtual_machines`
+		_ = s.db.GetContext(ctx, &vmc, query)
+
+		for _, c := range clusters {
+			totalNodes += len(c.Nodes)
+			totalCPU += c.TotalCPUCores
+			totalRAM += c.TotalRAMGB
+			totalStorage += c.TotalStorageTB
+		}
+
+		logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+	                        COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+	                 FROM vm_activity_logs l
+	                 LEFT JOIN users u ON l.user_id = u.id
+	                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
+	                 ORDER BY l.created_at DESC LIMIT 10`
+		_ = s.db.SelectContext(ctx, &recentLogs, logQuery)
+	} else {
+		// Operator role: hide host clusters and physical nodes, only calculate metrics for assigned VMs
+		clusters = []models.Cluster{}
+		query := `SELECT 
+	                COUNT(*) as total,
+	                COUNT(CASE WHEN v.status = 'RUNNING' THEN 1 END) as running,
+	                COUNT(CASE WHEN v.status = 'STOPPED' THEN 1 END) as stopped,
+	                COALESCE(SUM(v.cpu_cores), 0) as cpu,
+	                COALESCE(SUM(v.ram_mb), 0) as ram,
+	                COALESCE(SUM(v.disk_gb), 0) as disk
+	              FROM virtual_machines v
+	              INNER JOIN user_vm_assignments a ON v.id = a.vm_id
+	              WHERE a.user_id = $1`
+		_ = s.db.GetContext(ctx, &vmc, query, userID)
+
+		logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
+	                        COALESCE(u.username, 'System') as username, COALESCE(v.name, 'N/A') as vm_name
+	                 FROM vm_activity_logs l
+	                 LEFT JOIN users u ON l.user_id = u.id
+	                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
+	                 WHERE l.user_id = $1 OR l.vm_id IN (SELECT vm_id FROM user_vm_assignments WHERE user_id = $1)
+	                 ORDER BY l.created_at DESC LIMIT 10`
+		_ = s.db.SelectContext(ctx, &recentLogs, logQuery, userID)
 	}
 
-	// Fetch recent 10 activity logs
-	recentLogs := []models.VMActivityLog{}
-	logQuery := `SELECT l.id, l.tenant_id, l.vm_id, l.user_id, l.action, l.status, l.details, l.created_at,
-                        u.username, COALESCE(v.name, 'N/A') as vm_name
-                 FROM vm_activity_logs l
-                 LEFT JOIN users u ON l.user_id = u.id
-                 LEFT JOIN virtual_machines v ON l.vm_id = v.id
-                 ORDER BY l.created_at DESC LIMIT 10`
-	_ = s.db.SelectContext(ctx, &recentLogs, logQuery)
+	totalVMs := vmc.Total
+	runningVMs := vmc.Running
+	stoppedVMs := vmc.Stopped
+	allocCPU := vmc.CPU
+	allocRAM := vmc.RAM / 1024
+	allocDisk := vmc.Disk
 
 	return &models.DashboardSummaryResponse{
 		TotalClusters:   len(clusters),

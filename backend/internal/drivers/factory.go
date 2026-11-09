@@ -43,7 +43,7 @@ func (f *DriverFactory) GetDriverForCluster(cluster *models.Cluster) HypervisorD
 			endpoint = f.cfg.ProxmoxEndpoint
 		}
 		tokenID := cluster.AuthUser
-		tokenSecret := cluster.AuthSecret
+		tokenSecret := config.DecryptSecret(cluster.AuthSecret, f.cfg.EncryptionKey)
 		if tokenID == "" {
 			tokenID = f.cfg.ProxmoxTokenID
 			tokenSecret = f.cfg.ProxmoxTokenSecret
@@ -56,7 +56,7 @@ func (f *DriverFactory) GetDriverForCluster(cluster *models.Cluster) HypervisorD
 			endpoint = f.cfg.VCenterHost
 		}
 		user := cluster.AuthUser
-		secret := cluster.AuthSecret
+		secret := config.DecryptSecret(cluster.AuthSecret, f.cfg.EncryptionKey)
 		if user == "" {
 			user = f.cfg.VCenterUser
 			secret = f.cfg.VCenterPassword
@@ -76,6 +76,8 @@ func (f *DriverFactory) CreateDriver(hType models.HypervisorType, endpoint, user
 	if f.cfg.HypervisorMode == "SIMULATOR" {
 		return NewSimulatorDriver()
 	}
+
+	secret = config.DecryptSecret(secret, f.cfg.EncryptionKey)
 
 	switch hType {
 	case models.HypervisorProxmox:

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"iaas-dashboard/internal/database"
 	"iaas-dashboard/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -19,19 +20,18 @@ const (
 	ContextRole     = "role"
 )
 
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func AuthMiddleware(jwtSecret string, redisClients ...*database.RedisClient) gin.HandlerFunc {
+	var redisClient *database.RedisClient
+	if len(redisClients) > 0 {
+		redisClient = redisClients[0]
+	}
+
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			// Also check query param "token" (helpful for WebSocket connections like VM console)
-			tokenParam := c.Query("token")
-			if tokenParam != "" {
-				authHeader = "Bearer " + tokenParam
-			} else {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
-				c.Abort()
-				return
-			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+			c.Abort()
+			return
 		}
 
 		parts := strings.Split(authHeader, " ")
@@ -53,6 +53,12 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired authorization token"})
+			c.Abort()
+			return
+		}
+
+		if redisClient != nil && redisClient.IsUserRevoked(c.Request.Context(), claims.UserID.String()) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User session has been revoked"})
 			c.Abort()
 			return
 		}
@@ -92,18 +98,53 @@ func RequireRole(allowedRoles ...models.UserRole) gin.HandlerFunc {
 	}
 }
 
-// Helper functions for handlers
+// ValidateTokenString parses and verifies a JWT token string
+func ValidateTokenString(tokenString, jwtSecret string) (*models.TokenClaims, error) {
+	claims := &models.TokenClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(jwtSecret), nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid or expired token: %w", err)
+	}
+
+	return claims, nil
+}
+
+// Helper functions for handlers (safe against nil panics)
 func GetUserID(c *gin.Context) uuid.UUID {
-	val, _ := c.Get(ContextUserID)
-	return val.(uuid.UUID)
+	val, exists := c.Get(ContextUserID)
+	if !exists || val == nil {
+		return uuid.Nil
+	}
+	if u, ok := val.(uuid.UUID); ok {
+		return u
+	}
+	return uuid.Nil
 }
 
 func GetTenantID(c *gin.Context) uuid.UUID {
-	val, _ := c.Get(ContextTenantID)
-	return val.(uuid.UUID)
+	val, exists := c.Get(ContextTenantID)
+	if !exists || val == nil {
+		return uuid.Nil
+	}
+	if t, ok := val.(uuid.UUID); ok {
+		return t
+	}
+	return uuid.Nil
 }
 
 func GetUserRole(c *gin.Context) models.UserRole {
-	val, _ := c.Get(ContextRole)
-	return val.(models.UserRole)
+	val, exists := c.Get(ContextRole)
+	if !exists || val == nil {
+		return ""
+	}
+	if r, ok := val.(models.UserRole); ok {
+		return r
+	}
+	return ""
 }

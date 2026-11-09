@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"iaas-dashboard/internal/middleware"
 	"iaas-dashboard/internal/models"
@@ -46,12 +47,20 @@ func (h *VMHandler) GetVM(c *gin.Context) {
 		return
 	}
 
-	// Operators can only view their own tenant's VMs
+	// Operators can only view their own assigned VMs within their tenant
 	role := middleware.GetUserRole(c)
 	tenantID := middleware.GetTenantID(c)
-	if role == models.RoleOperator && vm.TenantID != tenantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: cannot access VM of another tenant"})
-		return
+	if role == models.RoleOperator {
+		if vm.TenantID != tenantID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: cannot access VM of another tenant"})
+			return
+		}
+		userID := middleware.GetUserID(c)
+		hasAccess, err := h.vmService.CheckOperatorVMAccess(c.Request.Context(), userID, vmID)
+		if err != nil || !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: this virtual machine is not assigned to your operator account"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, vm)
@@ -151,4 +160,86 @@ func (h *VMHandler) ExecutePowerAction(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) RebuildVM(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	var req models.RebuildVMRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rebuild request: " + err.Error()})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	vm, err := h.vmService.RebuildVM(c.Request.Context(), vmID, userID, tenantID, role, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) GetVMTelemetry(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	tel, err := h.vmService.GetVMTelemetry(c.Request.Context(), vmID, userID, tenantID, role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, tel)
+}
+
+func (h *VMHandler) GetFleetTelemetry(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	telemetryList, err := h.vmService.ListFleetTelemetry(c.Request.Context(), tenantID, userID, role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, telemetryList)
+}
+
+func (h *VMHandler) GetAuditLogs(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	role := middleware.GetUserRole(c)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	search := c.Query("search")
+	action := c.Query("action")
+	status := c.Query("status")
+	exportAll := c.Query("export") == "true" || c.Query("limit") == "0"
+
+	resp, err := h.vmService.GetAuditLogs(c.Request.Context(), userID, role, page, limit, search, action, status, exportAll)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

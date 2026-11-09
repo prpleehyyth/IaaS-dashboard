@@ -10,11 +10,17 @@ import BillingRatesConfig from './components/BillingRatesConfig';
 import UserManagement from './components/UserManagement';
 import BillingPreview from './components/BillingPreview';
 import LoginModal from './components/LoginModal';
+import RebuildVMModal from './components/RebuildVMModal';
+import VMResourceModal from './components/VMResourceModal';
+import VMDetail from './components/VMDetail';
+import ClusterDetail from './components/ClusterDetail';
 import { api } from './api/client';
 
 export default function App() {
   const [user, setUser] = useState(api.getUser());
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedVMId, setSelectedVMId] = useState(null);
+  const [selectedClusterId, setSelectedClusterId] = useState(null);
   
   // Data state
   const [summary, setSummary] = useState(null);
@@ -22,12 +28,15 @@ export default function App() {
   const [vms, setVMs] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [users, setUsers] = useState([]);
+  const [fleetTelemetry, setFleetTelemetry] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingVM, setEditingVM] = useState(null);
   const [consoleVM, setConsoleVM] = useState(null);
+  const [rebuildVM, setRebuildVM] = useState(null);
+  const [resourceVM, setResourceVM] = useState(null);
 
   // Notification Toast
   const [toast, setToast] = useState(null);
@@ -45,15 +54,28 @@ export default function App() {
     }
 
     try {
+      const isAdmin = api.isAdmin();
       const [sumData, clusterData, vmData] = await Promise.all([
         api.getDashboardSummary(),
-        api.getClusters(),
+        isAdmin ? api.getClusters() : Promise.resolve([]),
         api.getVMs(),
       ]);
 
       setSummary(sumData);
-      setClusters(clusterData || []);
-      setVMs(vmData || []);
+      setClusters(isAdmin ? (clusterData || []) : []);
+      if (!isAdmin && (['clusters', 'users', 'pricing'].includes(activeTab) || selectedClusterId)) {
+        setActiveTab('overview');
+        setSelectedClusterId(null);
+      }
+      
+      const seenVMs = new Set();
+      const uniqueVMs = (vmData || []).filter((vm) => {
+        const key = vm.id || `${vm.cluster_id}-${vm.vmid || vm.name}`;
+        if (seenVMs.has(key)) return false;
+        seenVMs.add(key);
+        return true;
+      });
+      setVMs(uniqueVMs);
 
       if (api.isAdmin()) {
         const [tenantData, userData] = await Promise.all([
@@ -62,6 +84,20 @@ export default function App() {
         ]);
         setTenants(tenantData || []);
         setUsers(userData || []);
+      }
+
+      // Fetch live telemetry for VMs
+      try {
+        const telemList = await api.getFleetTelemetry();
+        if (Array.isArray(telemList)) {
+          const telemMap = {};
+          telemList.forEach((t) => {
+            if (t.vm_id) telemMap[t.vm_id] = t;
+          });
+          setFleetTelemetry(telemMap);
+        }
+      } catch (telErr) {
+        console.warn("Fleet telemetry background fetch error:", telErr);
       }
     } catch (err) {
       console.error("Failed to load cloud state:", err);
@@ -78,12 +114,12 @@ export default function App() {
       setLoading(false);
     }
 
-    // Auto-refresh metrics every 20 seconds
+    // Auto-refresh metrics every 15 seconds
     const interval = setInterval(() => {
       if (api.isAuthenticated()) {
         loadData();
       }
-    }, 20000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [loadData]);
@@ -108,10 +144,21 @@ export default function App() {
     try {
       const resp = await api.login(targetRole, targetPass);
       setUser(resp.user);
+
+      // Redirect balik ke halaman overview & bersihkan sub-view / modal aktif
+      setActiveTab('overview');
+      setSelectedVMId(null);
+      setSelectedClusterId(null);
+      setIsCreateModalOpen(false);
+      setEditingVM(null);
+      setConsoleVM(null);
+      setRebuildVM(null);
+      setResourceVM(null);
+
       await loadData();
-      showToast(`Switched active session to: ${resp.user.role}`);
+      showToast(`Mode dialihkan ke: ${resp.user.role === 'ADMIN' ? 'Administrator' : 'Operator'}`);
     } catch (err) {
-      showToast("Failed to switch role: " + err.message, 'error');
+      showToast("Gagal berganti mode: " + err.message, 'error');
     }
   };
 
@@ -232,7 +279,11 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar 
         activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
+        setActiveTab={(tab) => {
+          setSelectedVMId(null);
+          setSelectedClusterId(null);
+          setActiveTab(tab);
+        }} 
         user={user}
         onSwitchRole={handleSwitchRole}
         onLogout={handleLogout}
@@ -240,58 +291,121 @@ export default function App() {
 
       {/* Main Page Content */}
       <main className="main-content">
-        {activeTab === 'overview' && (
-          <DashboardOverview 
-            summary={summary} 
-            onNavigateTab={setActiveTab} 
-          />
-        )}
-
-        {activeTab === 'clusters' && (
-          <ClusterTopology 
-            clusters={clusters} 
-            onRefresh={loadData} 
+        {selectedVMId ? (
+          <VMDetail 
+            vmId={selectedVMId}
+            user={user}
+            onBack={() => setSelectedVMId(null)}
+            onNavigateCluster={(cid) => {
+              setSelectedVMId(null);
+              setSelectedClusterId(cid);
+              setActiveTab('clusters');
+            }}
+            onOpenConsole={(vm) => setConsoleVM(vm)}
+            onOpenEditModal={(vm) => setEditingVM(vm)}
+            onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+            onOpenResourceModal={(vm) => setResourceVM(vm)}
+            onDeleteVM={(vm) => {
+              handleDeleteVM(vm);
+              setSelectedVMId(null);
+            }}
             showToast={showToast}
           />
-        )}
-
-        {activeTab === 'vms' && (
-          <VMManagement 
-            vms={vms}
+        ) : selectedClusterId && user?.role === 'ADMIN' ? (
+          <ClusterDetail 
+            clusterId={selectedClusterId}
             user={user}
-            clusters={clusters}
-            onStartVM={handleStartVM}
-            onStopVM={handleStopVM}
-            onRestartVM={handleRestartVM}
-            onOpenConsole={(vm) => setConsoleVM(vm)}
-            onOpenCreateModal={() => setIsCreateModalOpen(true)}
-            onOpenEditModal={(vm) => setEditingVM(vm)}
-            onDeleteVM={handleDeleteVM}
-          />
-        )}
-
-        {activeTab === 'users' && user?.role === 'ADMIN' && (
-          <UserManagement 
-            users={users}
-            vms={vms}
-            tenants={tenants}
+            onBack={() => setSelectedClusterId(null)}
+            onNavigateVM={(vid) => {
+              setSelectedClusterId(null);
+              setSelectedVMId(vid);
+              setActiveTab('vms');
+            }}
             onRefresh={loadData}
             showToast={showToast}
           />
-        )}
+        ) : (
+          <>
+            {activeTab === 'overview' && (
+              <DashboardOverview 
+                summary={summary} 
+                vms={vms}
+                fleetTelemetry={fleetTelemetry}
+                user={user}
+                onStartVM={handleStartVM}
+                onStopVM={handleStopVM}
+                onRestartVM={handleRestartVM}
+                onOpenResourceModal={(vm) => setResourceVM(vm)}
+                onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+                onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onNavigateTab={(tab) => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab(tab);
+                }} 
+              />
+            )}
 
-        {activeTab === 'billing-rates' && user?.role === 'ADMIN' && (
-          <BillingRatesConfig 
-            onRatesUpdated={() => showToast('Tarif billing berhasil disimpan dan disinkronkan')}
-            onNavigateBilling={() => setActiveTab('billing')}
-          />
-        )}
+            {activeTab === 'clusters' && user?.role === 'ADMIN' && (
+              <ClusterTopology 
+                clusters={clusters} 
+                onRefresh={loadData} 
+                onNavigateCluster={(cid) => setSelectedClusterId(cid)}
+                showToast={showToast}
+              />
+            )}
 
-        {activeTab === 'billing' && (
-          <BillingPreview 
-            user={user}
-            onNavigateRates={() => setActiveTab('billing-rates')}
-          />
+            {activeTab === 'vms' && (
+              <VMManagement 
+                vms={vms}
+                user={user}
+                clusters={clusters}
+                fleetTelemetry={fleetTelemetry}
+                onStartVM={handleStartVM}
+                onStopVM={handleStopVM}
+                onRestartVM={handleRestartVM}
+                onOpenConsole={(vm) => setConsoleVM(vm)}
+                onOpenCreateModal={() => setIsCreateModalOpen(true)}
+                onOpenEditModal={(vm) => setEditingVM(vm)}
+                onOpenRebuildModal={(vm) => setRebuildVM(vm)}
+                onOpenResourceModal={(vm) => setResourceVM(vm)}
+                onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onDeleteVM={handleDeleteVM}
+              />
+            )}
+
+            {activeTab === 'users' && user?.role === 'ADMIN' && (
+              <UserManagement 
+                users={users}
+                vms={vms}
+                tenants={tenants}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
+
+            {activeTab === 'billing-rates' && user?.role === 'ADMIN' && (
+              <BillingRatesConfig 
+                onRatesUpdated={() => showToast('Tarif billing berhasil disimpan dan disinkronkan')}
+                onNavigateBilling={() => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab('billing');
+                }}
+              />
+            )}
+
+            {activeTab === 'billing' && user?.role === 'ADMIN' && (
+              <BillingPreview 
+                user={user}
+                onNavigateRates={() => {
+                  setSelectedVMId(null);
+                  setSelectedClusterId(null);
+                  setActiveTab('billing-rates');
+                }}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -316,6 +430,26 @@ export default function App() {
         <VMConsoleModal 
           vm={consoleVM}
           onClose={() => setConsoleVM(null)}
+        />
+      )}
+
+      {rebuildVM && (
+        <RebuildVMModal 
+          vm={rebuildVM}
+          clusters={clusters}
+          onClose={() => setRebuildVM(null)}
+          onRebuildSuccess={(msg) => {
+            showToast(msg || `Instalasi ulang OS untuk '${rebuildVM.name}' berhasil diinisialisasi`);
+            setRebuildVM(null);
+            loadData();
+          }}
+        />
+      )}
+
+      {resourceVM && (
+        <VMResourceModal 
+          vm={resourceVM}
+          onClose={() => setResourceVM(null)}
         />
       )}
     </div>

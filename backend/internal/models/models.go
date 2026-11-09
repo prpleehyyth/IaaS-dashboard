@@ -97,7 +97,7 @@ type Cluster struct {
 	Datacenter     string         `json:"datacenter" db:"datacenter"`
 	Endpoint       string         `json:"endpoint" db:"endpoint"`
 	AuthUser       string         `json:"auth_user,omitempty" db:"auth_user"`
-	AuthSecret     string         `json:"auth_secret,omitempty" db:"auth_secret"`
+	AuthSecret     string         `json:"-" db:"auth_secret"`
 	InsecureSSL    bool           `json:"insecure_ssl" db:"insecure_ssl"`
 	Version        string         `json:"version,omitempty" db:"version"`
 	Status         string         `json:"status" db:"status"`
@@ -108,7 +108,7 @@ type Cluster struct {
 	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
 
 	// Relational attachments
-	Nodes []Node `json:"nodes,omitempty" db:"-"`
+	Nodes []Node           `json:"nodes,omitempty" db:"-"`
 	VMs   []VirtualMachine `json:"vms,omitempty" db:"-"`
 }
 
@@ -171,6 +171,14 @@ type VMActivityLog struct {
 	VMName    string     `json:"vm_name,omitempty" db:"vm_name"`
 }
 
+type AuditLogsResponse struct {
+	Logs       []VMActivityLog `json:"logs"`
+	Total      int             `json:"total"`
+	Page       int             `json:"page"`
+	Limit      int             `json:"limit"`
+	TotalPages int             `json:"total_pages"`
+}
+
 // ResourceMeteringSample Model
 type ResourceMeteringSample struct {
 	ID         int64     `json:"id" db:"id"`
@@ -213,6 +221,12 @@ type CreateVMRequest struct {
 	DiskGB         int            `json:"disk_gb" binding:"required,min=10"`
 	OSType         string         `json:"os_type" binding:"required"`
 	ISOImage       string         `json:"iso_image"`
+	// Network & VLAN Configuration (802.1Q)
+	NetworkBridge  string         `json:"network_bridge"` // e.g. "vmbr0", "vmbr1"
+	VLANTag        *int           `json:"vlan_tag"`       // e.g. 10, 20 (nil or <=0 for no VLAN)
+	NetworkModel   string         `json:"network_model"`  // "virtio", "e1000", "vmxnet3", "rtl8139"
+	Firewall       *bool          `json:"firewall"`       // default true
+	MACAddress     string         `json:"mac_address"`    // custom MAC or "auto"
 }
 
 type ISOImageInfo struct {
@@ -227,6 +241,31 @@ type UpdateVMRequest struct {
 	CPUCores int    `json:"cpu_cores" binding:"omitempty,min=1,max=64"`
 	RAMMB    int    `json:"ram_mb" binding:"omitempty,min=512"`
 	DiskGB   int    `json:"disk_gb" binding:"omitempty,min=10"`
+}
+
+type RebuildVMRequest struct {
+	OSType     string `json:"os_type" binding:"required"`
+	ISOImage   string `json:"iso_image"`
+	StartAfter bool   `json:"start_after"`
+}
+
+type VMTelemetry struct {
+	VMID           uuid.UUID `json:"vm_id"`
+	VMName         string    `json:"vm_name"`
+	Status         string    `json:"status"`
+	CPUCores       int       `json:"cpu_cores"`
+	CPUUsagePct    float64   `json:"cpu_usage_pct"`
+	RAMMB          int       `json:"ram_mb"`
+	RAMUsageMB     int       `json:"ram_usage_mb"`
+	RAMUsagePct    float64   `json:"ram_usage_pct"`
+	DiskGB         int       `json:"disk_gb"`
+	DiskUsageGB    float64   `json:"disk_usage_gb"`
+	DiskUsagePct   float64   `json:"disk_usage_pct"`
+	NetInBytes     int64     `json:"net_in_bytes"`
+	NetOutBytes    int64     `json:"net_out_bytes"`
+	DiskReadBytes  int64     `json:"disk_read_bytes"`
+	DiskWriteBytes int64     `json:"disk_write_bytes"`
+	UptimeSeconds  int64     `json:"uptime_seconds"`
 }
 
 type CreateClusterRequest struct {
@@ -247,6 +286,7 @@ type CreateClusterRequest struct {
 }
 
 type TestClusterConnectionRequest struct {
+	ClusterID   string         `json:"cluster_id"`
 	Type        HypervisorType `json:"type" binding:"required"`
 	Endpoint    string         `json:"endpoint" binding:"required"`
 	AuthUser    string         `json:"auth_user"`
@@ -327,6 +367,13 @@ type BillingRates struct {
 	RAMRateHourly     float64   `json:"ram_rate_hourly" db:"ram_rate_hourly"`
 	StorageRateHourly float64   `json:"storage_rate_hourly" db:"storage_rate_hourly"`
 	NetworkRateHourly float64   `json:"network_rate_hourly" db:"network_rate_hourly"`
+	ActiveTier        string    `json:"active_tier" db:"active_tier"`
+	StorageType       string    `json:"storage_type" db:"storage_type"`
+	VirtRateMonthly   float64   `json:"virt_rate_monthly" db:"virt_rate_monthly"`
+	ManCostMonthly    float64   `json:"man_cost_monthly" db:"man_cost_monthly"`
+	BandwidthMonthly  float64   `json:"bandwidth_monthly" db:"bandwidth_monthly"`
+	SetupFeeOTC       float64   `json:"setup_fee_otc" db:"setup_fee_otc"`
+	HoursPerMonth     float64   `json:"hours_per_month" db:"hours_per_month"`
 	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
 }
 
@@ -336,25 +383,36 @@ type UpdateBillingRatesRequest struct {
 	RAMRateHourly     float64 `json:"ram_rate_hourly"`
 	StorageRateHourly float64 `json:"storage_rate_hourly"`
 	NetworkRateHourly float64 `json:"network_rate_hourly"`
+	ActiveTier        string  `json:"active_tier"`
+	StorageType       string  `json:"storage_type"`
+	VirtRateMonthly   float64 `json:"virt_rate_monthly"`
+	ManCostMonthly    float64 `json:"man_cost_monthly"`
+	BandwidthMonthly  float64 `json:"bandwidth_monthly"`
+	SetupFeeOTC       float64 `json:"setup_fee_otc"`
+	HoursPerMonth     float64 `json:"hours_per_month"`
 }
 
 type VMBillingItem struct {
-	VMID              uuid.UUID `json:"vm_id"`
-	VMName            string    `json:"vm_name"`
-	Status            string    `json:"status"`
-	NodeName          string    `json:"node_name"`
-	ClusterName       string    `json:"cluster_name"`
-	CPUCores          int       `json:"cpu_cores"`
-	RAMMB             int       `json:"ram_mb"`
-	DiskGB            int       `json:"disk_gb"`
-	IPAddress         string    `json:"ip_address"`
-	CPUCostHourly     float64   `json:"cpu_cost_hourly"`
-	RAMCostHourly     float64   `json:"ram_cost_hourly"`
-	StorageCostHourly float64   `json:"storage_cost_hourly"`
-	NetworkCostHourly float64   `json:"network_cost_hourly"`
-	TotalHourly       float64   `json:"total_hourly"`
-	TotalMonthly      float64   `json:"total_monthly"`
-	AssignedUserName  string    `json:"assigned_user_name,omitempty"`
+	VMID               uuid.UUID `json:"vm_id"`
+	VMName             string    `json:"vm_name"`
+	Status             string    `json:"status"`
+	NodeName           string    `json:"node_name"`
+	ClusterName        string    `json:"cluster_name"`
+	CPUCores           int       `json:"cpu_cores"`
+	RAMMB              int       `json:"ram_mb"`
+	DiskGB             int       `json:"disk_gb"`
+	IPAddress          string    `json:"ip_address"`
+	CPUCostHourly      float64   `json:"cpu_cost_hourly"`
+	RAMCostHourly      float64   `json:"ram_cost_hourly"`
+	StorageCostHourly  float64   `json:"storage_cost_hourly"`
+	VirtCostHourly     float64   `json:"virt_cost_hourly"`
+	ManCostHourly      float64   `json:"man_cost_hourly"`
+	BandwidthCostHourly float64  `json:"bandwidth_cost_hourly"`
+	NetworkCostHourly  float64   `json:"network_cost_hourly"`
+	SetupFeeOTC        float64   `json:"setup_fee_otc"`
+	TotalHourly        float64   `json:"total_hourly"`
+	TotalMonthly       float64   `json:"total_monthly"`
+	AssignedUserName   string    `json:"assigned_user_name,omitempty"`
 }
 
 type UserBillingReport struct {
@@ -367,6 +425,8 @@ type UserBillingReport struct {
 	TotalDiskGB   int             `json:"total_disk_gb"`
 	TotalHourly   float64         `json:"total_hourly"`
 	TotalMonthly  float64         `json:"total_monthly"`
+	TotalSetupOTC float64         `json:"total_setup_otc"`
+	ActiveTier    string          `json:"active_tier"`
 	VMs           []VMBillingItem `json:"vms"`
 	Rates         BillingRates    `json:"rates"`
 }

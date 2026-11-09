@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/config"
@@ -44,26 +47,36 @@ func main() {
 	vmService := services.NewVMService(db, redisClient, driverFactory)
 	consoleService := services.NewConsoleService(db, redisClient, driverFactory, vmService)
 	meteringService := services.NewMeteringService(db)
+<<<<<<< HEAD
 	userService := services.NewUserService(db, driverFactory)
+=======
+	userService := services.NewUserService(db, redisClient)
+>>>>>>> 436fbfde5fd66f78e9d193a62e9451d1a24f0101
 
 	// 4. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	clusterHandler := handlers.NewClusterHandler(clusterService)
 	vmHandler := handlers.NewVMHandler(vmService)
-	consoleHandler := handlers.NewConsoleHandler(consoleService, vmService, redisClient)
+	consoleHandler := handlers.NewConsoleHandler(consoleService, vmService, redisClient, cfg.JWTSecret)
 	tenantHandler := handlers.NewTenantHandler(db)
 	meteringHandler := handlers.NewMeteringHandler(meteringService)
 	userHandler := handlers.NewUserHandler(userService)
+
+	// Rate limiter for authentication (max 10 login attempts per minute per IP)
+	loginLimiter := middleware.NewLoginRateLimiter(10, 1*time.Minute)
 
 	// 5. Background Metering Worker (records periodic usage snapshots for billing readiness)
 	go startMeteringWorker(db)
 
 	// 6. Router Setup
 	r := gin.Default()
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 
-	// CORS configuration
+	// CORS configuration (Restricted origin validation with credentials support)
 	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
+		AllowOriginFunc: func(origin string) bool {
+			return isAllowedCORSOrigin(origin, cfg.CORSAllowedOrigins)
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -76,18 +89,17 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
 			"mode":    cfg.HypervisorMode,
-			"service": "CloudForge Multi-Tenant Hybrid Cloud Controller",
+			"service": "Private Cloud Multi-Tenant Hybrid Cloud Controller",
 			"time":    time.Now().Format(time.RFC3339),
 		})
 	})
 
-	r.POST("/api/v1/auth/login", authHandler.Login)
+	r.POST("/api/v1/auth/login", loginLimiter.Middleware(), authHandler.Login)
 	r.GET("/api/v1/vms/:id/console/ws", consoleHandler.HandleConsoleWebSocket)
-	r.GET("/api/v1/vms/console/ws", consoleHandler.HandleConsoleWebSocket)
 
 	// Authenticated Routes
 	api := r.Group("/api/v1")
-	api.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	api.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	{
 		api.GET("/auth/me", authHandler.GetCurrentUser)
 
@@ -99,21 +111,25 @@ func main() {
 
 		// Virtual Machines (Admin & Operator)
 		api.GET("/vms", vmHandler.ListVMs)
+		api.GET("/vms/telemetry", vmHandler.GetFleetTelemetry)
 		api.GET("/vms/:id", vmHandler.GetVM)
+		api.GET("/vms/:id/telemetry", vmHandler.GetVMTelemetry)
 		api.POST("/vms/:id/action", vmHandler.ExecutePowerAction) // Start, Stop, Restart
+		api.POST("/vms/:id/backup", vmHandler.ExecuteBackup)      // Proxmox PBS / VMware NetApp Backup (Warm/Cold)
+		api.POST("/vms/:id/rebuild", vmHandler.RebuildVM)         // OS Reinstallation (Rebuild)
 		api.POST("/vms/:id/console", consoleHandler.RequestConsoleSession)
-
-		// Telemetry & Metering (Pre-wired for billing)
-		api.GET("/metering/summary", meteringHandler.GetMeteringSummary)
-		api.GET("/billing/report", meteringHandler.GetBillingReport)
-		api.GET("/billing/rates", meteringHandler.GetBillingRates)
+		api.GET("/audit-logs", vmHandler.GetAuditLogs)
 
 		// Admin-Only Routes
 		adminOnly := api.Group("")
 		adminOnly.Use(middleware.RequireRole(models.RoleAdmin))
 		{
-			// Billing Rate Management (Admin Only)
+			// Telemetry, Metering & Billing (Admin Only)
+			adminOnly.GET("/metering/summary", meteringHandler.GetMeteringSummary)
+			adminOnly.GET("/billing/report", meteringHandler.GetBillingReport)
+			adminOnly.GET("/billing/rates", meteringHandler.GetBillingRates)
 			adminOnly.PUT("/billing/rates", meteringHandler.UpdateBillingRates)
+
 			// Cluster & Node Fleet Management (Admin Only)
 			adminOnly.POST("/clusters", clusterHandler.CreateCluster)
 			adminOnly.POST("/clusters/test-connection", clusterHandler.TestConnection)
@@ -148,6 +164,30 @@ func main() {
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
+}
+
+func isAllowedCORSOrigin(origin string, allowedOrigins []string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range allowedOrigins {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "pal.co.id" || strings.HasSuffix(host, ".pal.co.id") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsPrivate() {
+		return true
+	}
+	return false
 }
 
 func startMeteringWorker(db database.DBOrTx) {
