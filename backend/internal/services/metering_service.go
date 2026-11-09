@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/models"
@@ -46,6 +47,11 @@ func (s *MeteringService) EnsureSchema(ctx context.Context) {
 		`ALTER TABLE billing_rates ADD COLUMN IF NOT EXISTS bandwidth_monthly NUMERIC(12, 2) DEFAULT 75000.00;`,
 		`ALTER TABLE billing_rates ADD COLUMN IF NOT EXISTS setup_fee_otc NUMERIC(12, 2) DEFAULT 150000.00;`,
 		`ALTER TABLE billing_rates ADD COLUMN IF NOT EXISTS hours_per_month NUMERIC(12, 2) DEFAULT 730.00;`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_mode VARCHAR(20) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_provider VARCHAR(30) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_quota_gb INT DEFAULT 0;`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_schedule VARCHAR(30) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS last_backup_at TIMESTAMP WITH TIME ZONE;`,
 		`INSERT INTO billing_rates (id, currency, cpu_rate_hourly, ram_rate_hourly, storage_rate_hourly, network_rate_hourly, active_tier, storage_type, virt_rate_monthly, man_cost_monthly, bandwidth_monthly, setup_fee_otc, hours_per_month)
 		 VALUES ('default', 'IDR', 68.49, 34.25, 1.30, 54.79, 'TIER_1', 'STR-SSATA', 10000.00, 100000.00, 75000.00, 150000.00, 730.00)
 		 ON CONFLICT (id) DO NOTHING;`,
@@ -53,6 +59,92 @@ func (s *MeteringService) EnsureSchema(ctx context.Context) {
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m)
 	}
+}
+
+func computeBackupMonthlyCost(activeTier, hypervisorType, backupMode, backupProvider string, quotaGB, diskGB int) float64 {
+	mode := strings.ToUpper(strings.TrimSpace(backupMode))
+	if mode != "WARM" && mode != "COLD" {
+		return 0
+	}
+
+	provider := strings.ToUpper(strings.TrimSpace(backupProvider))
+	if provider != "PBS" && provider != "NETAPP" && provider != "VEEAM" {
+		if strings.ToUpper(hypervisorType) == "VMWARE" {
+			provider = "NETAPP"
+		} else {
+			provider = "PBS"
+		}
+	}
+
+	if quotaGB <= 0 {
+		quotaGB = diskGB
+	}
+
+	tier := strings.ToUpper(strings.TrimSpace(activeTier))
+
+	// Base license / service cost per VM per month
+	var baseMonthly float64
+	var repoPerGB float64
+
+	if provider == "NETAPP" || provider == "VEEAM" {
+		// VMware NetApp SnapCenter / ONTAP or Veeam Backup & Replication (VUL)
+		if mode == "WARM" {
+			switch tier {
+			case "TIER_3":
+				baseMonthly = 250000
+				repoPerGB = 500
+			case "TIER_2":
+				baseMonthly = 200000
+				repoPerGB = 400
+			default:
+				baseMonthly = 150000
+				repoPerGB = 300
+			}
+		} else {
+			// COLD NetApp SnapVault Archive
+			switch tier {
+			case "TIER_3":
+				baseMonthly = 175000
+				repoPerGB = 350
+			case "TIER_2":
+				baseMonthly = 130000
+				repoPerGB = 275
+			default:
+				baseMonthly = 95000
+				repoPerGB = 200
+			}
+		}
+	} else {
+		// Proxmox Backup Server (PBS)
+		if mode == "WARM" {
+			switch tier {
+			case "TIER_3":
+				baseMonthly = 100000
+				repoPerGB = 500
+			case "TIER_2":
+				baseMonthly = 75000
+				repoPerGB = 400
+			default:
+				baseMonthly = 50000
+				repoPerGB = 300
+			}
+		} else {
+			// COLD PBS Stop-Mode Backup
+			switch tier {
+			case "TIER_3":
+				baseMonthly = 65000
+				repoPerGB = 350
+			case "TIER_2":
+				baseMonthly = 45000
+				repoPerGB = 275
+			default:
+				baseMonthly = 30000
+				repoPerGB = 200
+			}
+		}
+	}
+
+	return baseMonthly + (float64(quotaGB) * repoPerGB)
 }
 
 func (s *MeteringService) GetBillingRates(ctx context.Context) (*models.BillingRates, error) {
@@ -174,10 +266,14 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 		ID               uuid.UUID `db:"id"`
 		Name             string    `db:"name"`
 		Status           string    `db:"status"`
+		HypervisorType   string    `db:"hypervisor_type"`
 		CPUCores         int       `db:"cpu_cores"`
 		RAMMB            int       `db:"ram_mb"`
 		DiskGB           int       `db:"disk_gb"`
 		IPAddress        string    `db:"ip_address"`
+		BackupMode       string    `db:"backup_mode"`
+		BackupProvider   string    `db:"backup_provider"`
+		BackupQuotaGB    int       `db:"backup_quota_gb"`
 		ClusterName      string    `db:"cluster_name"`
 		NodeName         string    `db:"node_name"`
 		AssignedUserName string    `db:"assigned_user_name"`
@@ -185,8 +281,13 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 
 	var rows []vmRow
 	if role == models.RoleAdmin {
-		query := `SELECT v.id, v.name, v.status, v.cpu_cores, v.ram_mb, v.disk_gb,
+		query := `SELECT v.id, v.name, v.status,
+		                 COALESCE(v.hypervisor_type, 'PROXMOX') as hypervisor_type,
+		                 v.cpu_cores, v.ram_mb, v.disk_gb,
 		                 COALESCE(v.ip_address, '') as ip_address,
+		                 COALESCE(v.backup_mode, 'NONE') as backup_mode,
+		                 COALESCE(v.backup_provider, 'NONE') as backup_provider,
+		                 COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
 		                 COALESCE(c.name, 'Default Cluster') as cluster_name,
 		                 COALESCE(n.name, 'Default Node') as node_name,
 		                 COALESCE(u.username, 'All Users / Fleet') as assigned_user_name
@@ -198,8 +299,13 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 		          ORDER BY v.name ASC`
 		err = s.db.SelectContext(ctx, &rows, query)
 	} else {
-		query := `SELECT v.id, v.name, v.status, v.cpu_cores, v.ram_mb, v.disk_gb,
+		query := `SELECT v.id, v.name, v.status,
+		                 COALESCE(v.hypervisor_type, 'PROXMOX') as hypervisor_type,
+		                 v.cpu_cores, v.ram_mb, v.disk_gb,
 		                 COALESCE(v.ip_address, '') as ip_address,
+		                 COALESCE(v.backup_mode, 'NONE') as backup_mode,
+		                 COALESCE(v.backup_provider, 'NONE') as backup_provider,
+		                 COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
 		                 COALESCE(c.name, 'Default Cluster') as cluster_name,
 		                 COALESCE(n.name, 'Default Node') as node_name,
 		                 COALESCE(u.username, $2) as assigned_user_name
@@ -222,6 +328,7 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 	var totalDisk int
 	var totalHourly float64
 	var totalSetupOTC float64
+	var totalBackupMonthly float64
 
 	hours := rates.HoursPerMonth
 	if hours <= 0 {
@@ -238,7 +345,10 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 		netCost := rates.NetworkRateHourly
 		setupFee := rates.SetupFeeOTC
 
-		vmHourly := cpuCost + ramCost + storageCost + virtCost + manCost + bwCost + netCost
+		backupMonthly := computeBackupMonthlyCost(rates.ActiveTier, r.HypervisorType, r.BackupMode, r.BackupProvider, r.BackupQuotaGB, r.DiskGB)
+		backupHourly := backupMonthly / hours
+
+		vmHourly := cpuCost + ramCost + storageCost + virtCost + manCost + bwCost + netCost + backupHourly
 		vmMonthly := vmHourly * hours
 
 		// Round to 2 decimals
@@ -249,6 +359,8 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 		manCost = math.Round(manCost*100) / 100
 		bwCost = math.Round(bwCost*100) / 100
 		netCost = math.Round(netCost*100) / 100
+		backupHourly = math.Round(backupHourly*100) / 100
+		backupMonthly = math.Round(backupMonthly*100) / 100
 		vmHourly = math.Round(vmHourly*100) / 100
 		vmMonthly = math.Round(vmMonthly*100) / 100
 
@@ -257,6 +369,7 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 		totalDisk += r.DiskGB
 		totalHourly += vmHourly
 		totalSetupOTC += setupFee
+		totalBackupMonthly += backupMonthly
 
 		items = append(items, models.VMBillingItem{
 			VMID:                r.ID,
@@ -264,6 +377,7 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 			Status:              r.Status,
 			NodeName:            r.NodeName,
 			ClusterName:         r.ClusterName,
+			HypervisorType:      r.HypervisorType,
 			CPUCores:            r.CPUCores,
 			RAMMB:               r.RAMMB,
 			DiskGB:              r.DiskGB,
@@ -275,6 +389,11 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 			ManCostHourly:       manCost,
 			BandwidthCostHourly: bwCost,
 			NetworkCostHourly:   netCost,
+			BackupMode:          r.BackupMode,
+			BackupProvider:      r.BackupProvider,
+			BackupQuotaGB:       r.BackupQuotaGB,
+			BackupCostHourly:    backupHourly,
+			BackupCostMonthly:   backupMonthly,
 			SetupFeeOTC:         setupFee,
 			TotalHourly:         vmHourly,
 			TotalMonthly:        vmMonthly,
@@ -291,19 +410,20 @@ func (s *MeteringService) GetUserBillingReport(ctx context.Context, userID uuid.
 	totalRAMGB := math.Round((float64(totalRAMMB)/1024.0)*10) / 10
 
 	return &models.UserBillingReport{
-		UserID:        userID,
-		Username:      username,
-		Role:          string(role),
-		TotalVMs:      len(items),
-		TotalCPUCores: totalCores,
-		TotalRAMGB:    totalRAMGB,
-		TotalDiskGB:   totalDisk,
-		TotalHourly:   totalHourly,
-		TotalMonthly:  totalMonthly,
-		TotalSetupOTC: totalSetupOTC,
-		ActiveTier:    rates.ActiveTier,
-		VMs:           items,
-		Rates:         *rates,
+		UserID:             userID,
+		Username:           username,
+		Role:               string(role),
+		TotalVMs:           len(items),
+		TotalCPUCores:      totalCores,
+		TotalRAMGB:         totalRAMGB,
+		TotalDiskGB:        totalDisk,
+		TotalHourly:        totalHourly,
+		TotalMonthly:       totalMonthly,
+		TotalSetupOTC:      totalSetupOTC,
+		TotalBackupMonthly: totalBackupMonthly,
+		ActiveTier:         rates.ActiveTier,
+		VMs:                items,
+		Rates:              *rates,
 	}, nil
 }
 

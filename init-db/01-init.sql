@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS virtual_machines (
     os_type VARCHAR(50) DEFAULT 'Ubuntu',
     console_port INT DEFAULT 0,
     vmid INT DEFAULT 0, -- Proxmox VMID or VMware MoRef
+    backup_mode VARCHAR(20) DEFAULT 'NONE',
+    backup_provider VARCHAR(30) DEFAULT 'NONE',
+    backup_quota_gb INT DEFAULT 0,
+    backup_schedule VARCHAR(30) DEFAULT 'NONE',
+    last_backup_at TIMESTAMP WITH TIME ZONE,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

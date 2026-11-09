@@ -218,6 +218,17 @@ export default function App() {
     await loadData();
   };
 
+  const handleBackupVM = async (vm, modeOverride) => {
+    try {
+      const mode = modeOverride || (vm.backup_mode && vm.backup_mode !== 'NONE' ? vm.backup_mode : 'WARM');
+      const res = await api.triggerVMBackup(vm.id, mode);
+      showToast(res.message || `Backup ${mode} berhasil dijalankan untuk '${vm.name}'`);
+      await loadData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Dedicated Login Page if unauthenticated
   if (!user) {
     return (
@@ -370,6 +381,7 @@ export default function App() {
                 onOpenRebuildModal={(vm) => setRebuildVM(vm)}
                 onOpenResourceModal={(vm) => setResourceVM(vm)}
                 onNavigateVM={(vid) => setSelectedVMId(vid)}
+                onBackupVM={handleBackupVM}
                 onDeleteVM={handleDeleteVM}
               />
             )}

@@ -23,20 +23,67 @@ type VMService struct {
 }
 
 func NewVMService(db *sqlx.DB, redis *database.RedisClient, driverFactory *drivers.DriverFactory) *VMService {
-	return &VMService{
+	svc := &VMService{
 		db:            db,
 		redis:         redis,
 		driverFactory: driverFactory,
 	}
+	svc.EnsureBackupSchema(context.Background())
+	return svc
+}
+
+func (s *VMService) EnsureBackupSchema(ctx context.Context) {
+	migrations := []string{
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_mode VARCHAR(20) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_provider VARCHAR(30) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_quota_gb INT DEFAULT 0;`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS backup_schedule VARCHAR(30) DEFAULT 'NONE';`,
+		`ALTER TABLE virtual_machines ADD COLUMN IF NOT EXISTS last_backup_at TIMESTAMP WITH TIME ZONE;`,
+	}
+	for _, m := range migrations {
+		_, _ = s.db.ExecContext(ctx, m)
+	}
+}
+
+func resolveBackupConfig(hypervisorType models.HypervisorType, mode string, requestedProvider string, quotaGB, diskGB int, schedule string) (string, string, int, string) {
+	cleanMode := strings.ToUpper(strings.TrimSpace(mode))
+	if cleanMode != "WARM" && cleanMode != "COLD" {
+		return "NONE", "NONE", 0, "NONE"
+	}
+
+	provider := "PBS"
+	if hypervisorType == models.HypervisorVMware {
+		reqProv := strings.ToUpper(strings.TrimSpace(requestedProvider))
+		if reqProv == "VEEAM" {
+			provider = "VEEAM"
+		} else {
+			provider = "NETAPP"
+		}
+	}
+
+	if quotaGB <= 0 {
+		quotaGB = diskGB
+	}
+
+	cleanSched := strings.ToUpper(strings.TrimSpace(schedule))
+	if cleanSched != "DAILY" && cleanSched != "WEEKLY" && cleanSched != "MANUAL" {
+		if cleanMode == "WARM" {
+			cleanSched = "DAILY"
+		} else {
+			cleanSched = "WEEKLY"
+		}
+	}
+
+	return cleanMode, provider, quotaGB, cleanSched
 }
 
 func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, role models.UserRole) ([]models.VirtualMachine, error) {
+	s.EnsureBackupSchema(ctx)
 	var vms []models.VirtualMachine
 	var query string
 	var err error
 
 	if role == models.RoleAdmin {
-		// Admin sees all VMs across clusters with relational names
 		query = `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
@@ -44,6 +91,11 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
+		                COALESCE(v.backup_mode, 'NONE') as backup_mode,
+		                COALESCE(v.backup_provider, 'NONE') as backup_provider,
+		                COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
+		                COALESCE(v.backup_schedule, 'NONE') as backup_schedule,
+		                v.last_backup_at,
 		                v.created_by, v.created_at, v.updated_at,
 		                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
                  FROM virtual_machines v
@@ -53,7 +105,6 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
                  ORDER BY v.created_at DESC`
 		err = s.db.SelectContext(ctx, &vms, query)
 	} else {
-		// Operator sees ONLY assigned VMs. If no VM is assigned, returns empty list.
 		query = `SELECT DISTINCT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 		                v.cpu_cores, v.ram_mb, v.disk_gb,
 		                COALESCE(v.ip_address, '') as ip_address,
@@ -61,6 +112,11 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 		                COALESCE(v.os_type, 'Ubuntu') as os_type,
 		                COALESCE(v.console_port, 0) as console_port,
 		                COALESCE(v.vmid, 0) as vmid,
+		                COALESCE(v.backup_mode, 'NONE') as backup_mode,
+		                COALESCE(v.backup_provider, 'NONE') as backup_provider,
+		                COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
+		                COALESCE(v.backup_schedule, 'NONE') as backup_schedule,
+		                v.last_backup_at,
 		                v.created_by, v.created_at, v.updated_at,
 		                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
                  FROM virtual_machines v
@@ -80,6 +136,7 @@ func (s *VMService) ListVMs(ctx context.Context, tenantID, userID uuid.UUID, rol
 }
 
 func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.VirtualMachine, error) {
+	s.EnsureBackupSchema(ctx)
 	var vm models.VirtualMachine
 	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
@@ -88,6 +145,11 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
+	                COALESCE(v.backup_mode, 'NONE') as backup_mode,
+	                COALESCE(v.backup_provider, 'NONE') as backup_provider,
+	                COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
+	                COALESCE(v.backup_schedule, 'NONE') as backup_schedule,
+	                v.last_backup_at,
 	                v.created_by, v.created_at, v.updated_at,
 	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
               FROM virtual_machines v
@@ -107,6 +169,7 @@ func (s *VMService) GetVMByID(ctx context.Context, vmID uuid.UUID) (*models.Virt
 }
 
 func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualMachine, error) {
+	s.EnsureBackupSchema(ctx)
 	var vm models.VirtualMachine
 	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
@@ -115,6 +178,11 @@ func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualM
 	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
+	                COALESCE(v.backup_mode, 'NONE') as backup_mode,
+	                COALESCE(v.backup_provider, 'NONE') as backup_provider,
+	                COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
+	                COALESCE(v.backup_schedule, 'NONE') as backup_schedule,
+	                v.last_backup_at,
 	                v.created_by, v.created_at, v.updated_at,
 	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
               FROM virtual_machines v
@@ -131,6 +199,7 @@ func (s *VMService) GetVMByVMID(ctx context.Context, vmid int) (*models.VirtualM
 }
 
 func (s *VMService) GetAnyActiveVM(ctx context.Context) (*models.VirtualMachine, error) {
+	s.EnsureBackupSchema(ctx)
 	var vm models.VirtualMachine
 	query := `SELECT v.id, v.tenant_id, v.cluster_id, v.node_id, v.hypervisor_type, v.name, v.status,
 	                v.cpu_cores, v.ram_mb, v.disk_gb,
@@ -139,6 +208,11 @@ func (s *VMService) GetAnyActiveVM(ctx context.Context) (*models.VirtualMachine,
 	                COALESCE(v.os_type, 'Ubuntu') as os_type,
 	                COALESCE(v.console_port, 0) as console_port,
 	                COALESCE(v.vmid, 0) as vmid,
+	                COALESCE(v.backup_mode, 'NONE') as backup_mode,
+	                COALESCE(v.backup_provider, 'NONE') as backup_provider,
+	                COALESCE(v.backup_quota_gb, 0) as backup_quota_gb,
+	                COALESCE(v.backup_schedule, 'NONE') as backup_schedule,
+	                v.last_backup_at,
 	                v.created_by, v.created_at, v.updated_at,
 	                c.name as cluster_name, n.name as node_name, t.name as tenant_name 
               FROM virtual_machines v
@@ -174,6 +248,8 @@ func (s *VMService) getClusterSafely(ctx context.Context, clusterID string) (*mo
 }
 
 func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, req models.CreateVMRequest) (*models.VirtualMachine, error) {
+	s.EnsureBackupSchema(ctx)
+
 	// 1. Check Tenant Quota
 	var tenant models.Tenant
 	err := s.db.GetContext(ctx, &tenant, `SELECT * FROM tenants WHERE id = $1`, tenantID)
@@ -220,7 +296,10 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
 		return nil, fmt.Errorf("hypervisor failed to provision VM: %w", err)
 	}
 
-	// 4. Save to DB
+	// 4. Resolve Add-On Backup Configuration (Proxmox -> PBS, VMware -> NETAPP or VEEAM)
+	bMode, bProvider, bQuota, bSched := resolveBackupConfig(cluster.Type, req.BackupMode, req.BackupProvider, req.BackupQuotaGB, req.DiskGB, req.BackupSchedule)
+
+	// 5. Save to DB
 	vm := models.VirtualMachine{
 		ID:             uuid.New(),
 		TenantID:       tenantID,
@@ -237,24 +316,32 @@ func (s *VMService) CreateVM(ctx context.Context, tenantID, userID uuid.UUID, re
 		OSType:         req.OSType,
 		ConsolePort:    5900 + (vmid % 100),
 		VMID:           vmid,
+		BackupMode:     bMode,
+		BackupProvider: bProvider,
+		BackupQuotaGB:  bQuota,
+		BackupSchedule: bSched,
 		CreatedBy:      &userID,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
 
 	insertQuery := `INSERT INTO virtual_machines 
-        (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, ip_address, mac_address, os_type, console_port, vmid, created_by, created_at, updated_at)
-        VALUES (:id, :tenant_id, :cluster_id, :node_id, :hypervisor_type, :name, :status, :cpu_cores, :ram_mb, :disk_gb, :ip_address, :mac_address, :os_type, :console_port, :vmid, :created_by, :created_at, :updated_at)`
+        (id, tenant_id, cluster_id, node_id, hypervisor_type, name, status, cpu_cores, ram_mb, disk_gb, ip_address, mac_address, os_type, console_port, vmid, backup_mode, backup_provider, backup_quota_gb, backup_schedule, created_by, created_at, updated_at)
+        VALUES (:id, :tenant_id, :cluster_id, :node_id, :hypervisor_type, :name, :status, :cpu_cores, :ram_mb, :disk_gb, :ip_address, :mac_address, :os_type, :console_port, :vmid, :backup_mode, :backup_provider, :backup_quota_gb, :backup_schedule, :created_by, :created_at, :updated_at)`
 
 	_, err = s.db.NamedExecContext(ctx, insertQuery, vm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save VM record: %w", err)
 	}
 
-	// 5. Activity Log
-	s.LogActivity(ctx, tenantID, &vm.ID, userID, "CREATE_VM", "SUCCESS", fmt.Sprintf("Provisioned VM '%s' on %s/%s", vm.Name, cluster.Name, node.Name))
+	// 6. Activity Log
+	backupDetail := "No Backup Add-On"
+	if bMode != "NONE" {
+		backupDetail = fmt.Sprintf("Backup Add-On: %s (%s, %d GB, %s)", bProvider, bMode, bQuota, bSched)
+	}
+	s.LogActivity(ctx, tenantID, &vm.ID, userID, "CREATE_VM", "SUCCESS", fmt.Sprintf("Provisioned VM '%s' on %s/%s [%s]", vm.Name, cluster.Name, node.Name, backupDetail))
 
-	// 6. Pre-wire Metering sample for billing
+	// 7. Pre-wire Metering sample for billing
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO resource_metering_samples (tenant_id, vm_id, cpu_cores, ram_mb, disk_gb, status) VALUES ($1, $2, $3, $4, $5, $6)`,
 		tenantID, vm.ID, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.Status)
 
@@ -288,17 +375,91 @@ func (s *VMService) UpdateVMSpecs(ctx context.Context, vmID, userID uuid.UUID, r
 	if req.DiskGB > 0 {
 		vm.DiskGB = req.DiskGB
 	}
+
+	if req.BackupMode != "" {
+		reqProv := req.BackupProvider
+		if reqProv == "" {
+			reqProv = vm.BackupProvider
+		}
+		bMode, bProvider, bQuota, bSched := resolveBackupConfig(vm.HypervisorType, req.BackupMode, reqProv, req.BackupQuotaGB, vm.DiskGB, req.BackupSchedule)
+		vm.BackupMode = bMode
+		vm.BackupProvider = bProvider
+		vm.BackupQuotaGB = bQuota
+		vm.BackupSchedule = bSched
+	}
+
 	vm.UpdatedAt = time.Now()
 
-	updateQuery := `UPDATE virtual_machines SET name = $1, cpu_cores = $2, ram_mb = $3, disk_gb = $4, updated_at = $5 WHERE id = $6`
-	_, err = s.db.ExecContext(ctx, updateQuery, vm.Name, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.UpdatedAt, vm.ID)
+	updateQuery := `UPDATE virtual_machines SET name = $1, cpu_cores = $2, ram_mb = $3, disk_gb = $4, backup_mode = $5, backup_provider = $6, backup_quota_gb = $7, backup_schedule = $8, updated_at = $9 WHERE id = $10`
+	_, err = s.db.ExecContext(ctx, updateQuery, vm.Name, vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.BackupMode, vm.BackupProvider, vm.BackupQuotaGB, vm.BackupSchedule, vm.UpdatedAt, vm.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	s.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "EDIT_VM", "SUCCESS", fmt.Sprintf("Updated specs: %d vCPU, %d MB RAM, %d GB Disk", vm.CPUCores, vm.RAMMB, vm.DiskGB))
+	s.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "EDIT_VM", "SUCCESS", fmt.Sprintf("Updated specs: %d vCPU, %d MB RAM, %d GB Disk, Backup: %s (%s)", vm.CPUCores, vm.RAMMB, vm.DiskGB, vm.BackupMode, vm.BackupProvider))
 
 	return vm, nil
+}
+
+func (s *VMService) ExecuteBackup(ctx context.Context, vmID, userID, tenantID uuid.UUID, role models.UserRole, modeOverride string) (*models.VirtualMachine, string, error) {
+	vm, err := s.GetVMByID(ctx, vmID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if role == models.RoleOperator {
+		hasAccess, err := s.CheckOperatorVMAccess(ctx, userID, vmID)
+		if err != nil || !hasAccess {
+			return nil, "", errors.New("access denied: this virtual machine is not assigned to your operator account")
+		}
+	}
+
+	backupMode := vm.BackupMode
+	if strings.TrimSpace(modeOverride) != "" {
+		backupMode = strings.ToUpper(strings.TrimSpace(modeOverride))
+	}
+	if backupMode != "WARM" && backupMode != "COLD" {
+		backupMode = "WARM"
+	}
+
+	bMode, bProvider, bQuota, bSched := resolveBackupConfig(vm.HypervisorType, backupMode, vm.BackupProvider, vm.BackupQuotaGB, vm.DiskGB, vm.BackupSchedule)
+
+	cluster, err := s.getClusterSafely(ctx, vm.ClusterID)
+	if err != nil {
+		return nil, "", fmt.Errorf("cluster '%s' not found for VM: %w", vm.ClusterID, err)
+	}
+	var node models.Node
+	if vm.NodeID != "" {
+		_ = s.db.GetContext(ctx, &node, `SELECT * FROM nodes WHERE id = $1 OR cluster_id = $2 LIMIT 1`, vm.NodeID, cluster.ID)
+	}
+	if node.ID == "" {
+		node.ID = vm.NodeID
+	}
+
+	driver := s.driverFactory.GetDriverForCluster(cluster)
+	driverMode := bMode
+	if vm.HypervisorType == models.HypervisorVMware {
+		driverMode = bProvider + ":" + bMode
+	}
+	msg, err := driver.TriggerBackup(ctx, cluster, &node, vm.VMID, vm.Name, driverMode)
+	if err != nil {
+		s.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "BACKUP_VM", "FAILED", fmt.Sprintf("Failed %s %s backup on '%s': %v", bProvider, bMode, vm.Name, err))
+		return nil, "", err
+	}
+
+	now := time.Now()
+	vm.BackupMode = bMode
+	vm.BackupProvider = bProvider
+	vm.BackupQuotaGB = bQuota
+	vm.BackupSchedule = bSched
+	vm.LastBackupAt = &now
+	vm.UpdatedAt = now
+
+	_, _ = s.db.ExecContext(ctx, `UPDATE virtual_machines SET backup_mode = $1, backup_provider = $2, backup_quota_gb = $3, backup_schedule = $4, last_backup_at = $5, updated_at = $6 WHERE id = $7`,
+		vm.BackupMode, vm.BackupProvider, vm.BackupQuotaGB, vm.BackupSchedule, vm.LastBackupAt, vm.UpdatedAt, vm.ID)
+
+	s.LogActivity(ctx, vm.TenantID, &vm.ID, userID, "BACKUP_VM", "SUCCESS", msg)
+	return vm, msg, nil
 }
 
 func (s *VMService) DeleteVM(ctx context.Context, vmID, userID uuid.UUID) error {
@@ -617,4 +778,3 @@ func (s *VMService) CheckOperatorVMAccess(ctx context.Context, userID, vmID uuid
 	err := s.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM user_vm_assignments WHERE user_id = $1 AND vm_id = $2`, userID, vmID)
 	return count > 0, err
 }
-

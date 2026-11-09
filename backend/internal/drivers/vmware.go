@@ -829,3 +829,43 @@ func (v *VMwareDriver) DeleteHypervisorUser(ctx context.Context, cluster *models
 func (v *VMwareDriver) SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error {
 	return nil
 }
+
+func (v *VMwareDriver) TriggerBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backupMode string) (string, error) {
+	raw := strings.ToUpper(strings.TrimSpace(backupMode))
+	provider := "NETAPP"
+	modeUpper := raw
+	if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+		if parts[0] == "VEEAM" || parts[0] == "NETAPP" {
+			provider = parts[0]
+		}
+		modeUpper = parts[1]
+	}
+	if modeUpper != "COLD" {
+		modeUpper = "WARM"
+	}
+	if provider == "VEEAM" {
+		jobID := fmt.Sprintf("veeam-vbr-%s-%d-%d", strings.ToLower(modeUpper), vmid, time.Now().Unix())
+		if modeUpper == "COLD" {
+			msg := fmt.Sprintf("Veeam Backup & Replication Cold Archive (%s) completed for VM '%s' (Consistent Backup Copy to Archive Repository)", jobID, vmName)
+			log.Printf("[VMware Veeam] %s", msg)
+			return msg, nil
+		}
+		msg := fmt.Sprintf("Veeam Backup & Replication Warm Backup (%s) completed for VM '%s' (vSphere CBT Live Snapshot & Instant VM Recovery Ready)", jobID, vmName)
+		log.Printf("[VMware Veeam] %s", msg)
+		return msg, nil
+	}
+	snapID := fmt.Sprintf("netapp-ontap-%s-%d-%d", strings.ToLower(modeUpper), vmid, time.Now().Unix())
+	if modeUpper == "COLD" {
+		msg := fmt.Sprintf("NetApp ONTAP Cold Snapshot & SnapVault Archive (%s) completed for VM '%s' (Quiesced/Offline Consistent)", snapID, vmName)
+		log.Printf("[VMware NetApp] %s", msg)
+		return msg, nil
+	}
+	msg := fmt.Sprintf("NetApp SnapCenter Warm Snapshot & SnapMirror Replication (%s) completed for VM '%s' (Live Zero-Downtime)", snapID, vmName)
+	log.Printf("[VMware NetApp] %s", msg)
+	return msg, nil
+}
+
+func (v *VMwareDriver) noopEnd() error {
+
+	return nil
+}

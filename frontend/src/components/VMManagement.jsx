@@ -35,6 +35,7 @@ export default function VMManagement({
   onOpenRebuildModal,
   onOpenResourceModal,
   onNavigateVM,
+  onBackupVM,
   onDeleteVM 
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,8 +85,8 @@ export default function VMManagement({
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '4px' }}>
             {isAdmin 
-              ? 'Administrator: Akses penuh siklus hidup VM (Provision, Power, Edit Specs, Rebuild OS, Console)' 
-              : 'VM Operator: Kontrol Virtual Machine yang Ditugaskan (Power On, Power Off, Remote Console, Monitor)'}
+              ? 'Administrator: Akses penuh siklus hidup VM (Provision, Power, Edit Specs, Backup PBS/NetApp/Veeam, Rebuild OS, Console)' 
+              : 'VM Operator: Kontrol Virtual Machine yang Ditugaskan (Power On, Power Off, Backup, Remote Console, Monitor)'}
           </p>
         </div>
 
@@ -179,7 +180,7 @@ export default function VMManagement({
               <th>Virtual Machine</th>
               <th>{isAdmin ? 'Hypervisor & Node' : 'Hypervisor'}</th>
               <th>IP & Networking</th>
-              <th>Compute & Storage</th>
+              <th>Compute, Storage & Backup</th>
               <th>Power State</th>
               <th style={{ textAlign: 'right' }}>Aksi & Kontrol</th>
             </tr>
@@ -206,6 +207,11 @@ export default function VMManagement({
                 const isRunning = vm.status === 'RUNNING';
                 const isVMware = vm.hypervisor_type === 'VMWARE';
                 const isLoading = loadingActionId === vm.id;
+                const bMode = (vm.backup_mode || 'NONE').toUpperCase();
+                const hasBackupAddon = bMode === 'WARM' || bMode === 'COLD';
+                const bProvider = vm.backup_provider && vm.backup_provider !== 'NONE'
+                  ? vm.backup_provider
+                  : (isVMware ? 'NETAPP' : 'PBS');
 
                 return (
                   <tr key={vm.id}>
@@ -279,6 +285,28 @@ export default function VMManagement({
                           <span style={{ color: 'var(--text-dim)' }}>•</span>
                           <span style={{ color: '#0f172a', fontWeight: 700 }}>{vm.disk_gb} GB Disk</span>
                         </div>
+
+                        {/* Backup Add-On Badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                          {hasBackupAddon ? (
+                            <span style={{
+                              fontSize: '0.7rem',
+                              fontWeight: 800,
+                              padding: '1px 7px',
+                              borderRadius: '4px',
+                              background: bMode === 'WARM' ? '#fffbeb' : '#eff6ff',
+                              color: bMode === 'WARM' ? '#d97706' : '#0284c7',
+                              border: `1px solid ${bMode === 'WARM' ? '#fde68a' : '#bae6fd'}`
+                            }}>
+                              {bProvider} • {bMode} ({vm.backup_quota_gb || vm.disk_gb} GB • {vm.backup_schedule || 'DAILY'})
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                              Backup: Manual ({bProvider})
+                            </span>
+                          )}
+                        </div>
+
                         {isRunning && fleetTelemetry[vm.id] && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', fontSize: '0.74rem' }}>
                             <span style={{ 
@@ -356,6 +384,24 @@ export default function VMManagement({
                         >
                           <RotateCw size={13} />
                         </button>
+
+                        {/* Trigger Immediate Backup (PBS for Proxmox / NetApp for VMware) */}
+                        {onBackupVM && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title={`Jalankan Backup ${hasBackupAddon ? bMode : 'WARM'} via ${bProvider === 'VEEAM' ? 'Veeam Backup & Replication' : bProvider === 'NETAPP' ? 'NetApp ONTAP' : 'Proxmox Backup Server (PBS)'}`}
+                            disabled={isLoading}
+                            onClick={() => handleAction(onBackupVM, vm)}
+                            style={{
+                              color: bMode === 'COLD' ? '#0284c7' : '#d97706',
+                              borderColor: bMode === 'COLD' ? '#bae6fd' : '#fde68a',
+                              background: bMode === 'COLD' ? '#f0f9ff' : '#fffbeb'
+                            }}
+                          >
+                            <Database size={13} />
+                            <span>Backup {hasBackupAddon ? bMode : bProvider}</span>
+                          </button>
+                        )}
 
                         {/* Instalasi Ulang OS (Rebuild) - Available to Admin & Operator */}
                         <button

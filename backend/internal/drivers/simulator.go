@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"iaas-dashboard/internal/models"
@@ -225,4 +226,28 @@ func (s *SimulatorDriver) DeleteHypervisorUser(ctx context.Context, cluster *mod
 
 func (s *SimulatorDriver) SyncUserVMAccess(ctx context.Context, cluster *models.Cluster, user models.User, assignVMIDs []int, revokeVMIDs []int) error {
 	return nil
+}
+
+func (s *SimulatorDriver) TriggerBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backupMode string) (string, error) {
+	raw := strings.ToUpper(strings.TrimSpace(backupMode))
+	provider := "NETAPP"
+	modeUpper := raw
+	if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+		provider = parts[0]
+		modeUpper = parts[1]
+	}
+	if modeUpper != "COLD" {
+		modeUpper = "WARM"
+	}
+	if cluster != nil && cluster.Type == models.HypervisorVMware {
+		if provider == "VEEAM" {
+			return fmt.Sprintf("Veeam Backup & Replication %s Backup job completed for VM '%s' (VMID %d)", modeUpper, vmName, vmid), nil
+		}
+		return fmt.Sprintf("NetApp ONTAP %s Backup snapshot created for VM '%s' (VMID %d)", modeUpper, vmName, vmid), nil
+	}
+	vzdumpMode := "snapshot"
+	if modeUpper == "COLD" {
+		vzdumpMode = "stop"
+	}
+	return fmt.Sprintf("Proxmox Backup Server (PBS) %s Backup [mode=%s] completed for VM '%s' (VMID %d)", modeUpper, vzdumpMode, vmName, vmid), nil
 }

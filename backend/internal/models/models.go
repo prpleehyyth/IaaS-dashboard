@@ -147,6 +147,11 @@ type VirtualMachine struct {
 	OSType         string         `json:"os_type" db:"os_type"`
 	ConsolePort    int            `json:"console_port" db:"console_port"`
 	VMID           int            `json:"vmid" db:"vmid"`
+	BackupMode     string         `json:"backup_mode" db:"backup_mode"`         // "NONE", "WARM", "COLD"
+	BackupProvider string         `json:"backup_provider" db:"backup_provider"` // "NONE", "PBS", "NETAPP", "VEEAM"
+	BackupQuotaGB  int            `json:"backup_quota_gb" db:"backup_quota_gb"`
+	BackupSchedule string         `json:"backup_schedule" db:"backup_schedule"` // "NONE", "DAILY", "WEEKLY"
+	LastBackupAt   *time.Time     `json:"last_backup_at,omitempty" db:"last_backup_at"`
 	CreatedBy      *uuid.UUID     `json:"created_by,omitempty" db:"created_by"`
 	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at" db:"updated_at"`
@@ -221,6 +226,10 @@ type CreateVMRequest struct {
 	DiskGB         int            `json:"disk_gb" binding:"required,min=10"`
 	OSType         string         `json:"os_type" binding:"required"`
 	ISOImage       string         `json:"iso_image"`
+	BackupMode     string         `json:"backup_mode"`     // "NONE", "WARM", "COLD"
+	BackupProvider string         `json:"backup_provider"` // "NONE", "PBS", "NETAPP", "VEEAM"
+	BackupQuotaGB  int            `json:"backup_quota_gb"`
+	BackupSchedule string         `json:"backup_schedule"` // "NONE", "DAILY", "WEEKLY"
 	// Network & VLAN Configuration (802.1Q)
 	NetworkBridge  string         `json:"network_bridge"` // e.g. "vmbr0", "vmbr1"
 	VLANTag        *int           `json:"vlan_tag"`       // e.g. 10, 20 (nil or <=0 for no VLAN)
@@ -240,7 +249,11 @@ type UpdateVMRequest struct {
 	Name     string `json:"name"`
 	CPUCores int    `json:"cpu_cores" binding:"omitempty,min=1,max=64"`
 	RAMMB    int    `json:"ram_mb" binding:"omitempty,min=512"`
-	DiskGB   int    `json:"disk_gb" binding:"omitempty,min=10"`
+	DiskGB         int    `json:"disk_gb" binding:"omitempty,min=10"`
+	BackupMode     string `json:"backup_mode"`
+	BackupProvider string `json:"backup_provider"`
+	BackupQuotaGB  int    `json:"backup_quota_gb"`
+	BackupSchedule string `json:"backup_schedule"`
 }
 
 type RebuildVMRequest struct {
@@ -413,6 +426,12 @@ type VMBillingItem struct {
 	TotalHourly        float64   `json:"total_hourly"`
 	TotalMonthly       float64   `json:"total_monthly"`
 	AssignedUserName   string    `json:"assigned_user_name,omitempty"`
+	HypervisorType     string    `json:"hypervisor_type,omitempty"`
+	BackupMode         string    `json:"backup_mode,omitempty"`
+	BackupProvider     string    `json:"backup_provider,omitempty"`
+	BackupQuotaGB      int       `json:"backup_quota_gb,omitempty"`
+	BackupCostHourly   float64   `json:"backup_cost_hourly"`
+	BackupCostMonthly  float64   `json:"backup_cost_monthly"`
 }
 
 type UserBillingReport struct {
@@ -426,6 +445,7 @@ type UserBillingReport struct {
 	TotalHourly   float64         `json:"total_hourly"`
 	TotalMonthly  float64         `json:"total_monthly"`
 	TotalSetupOTC float64         `json:"total_setup_otc"`
+	TotalBackupMonthly float64    `json:"total_backup_monthly"`
 	ActiveTier    string          `json:"active_tier"`
 	VMs           []VMBillingItem `json:"vms"`
 	Rates         BillingRates    `json:"rates"`

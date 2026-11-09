@@ -190,6 +190,14 @@ class ApiClient {
     });
   }
 
+  async triggerVMBackup(id, backupMode = '') {
+    return this.request(`/vms/${id}/backup`, {
+      method: 'POST',
+      body: JSON.stringify({ backup_mode: backupMode }),
+    });
+    });
+  }
+
   async rebuildVM(id, payload) {
     return this.request(`/vms/${id}/rebuild`, {
       method: 'POST',

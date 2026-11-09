@@ -162,6 +162,38 @@ func (h *VMHandler) ExecutePowerAction(c *gin.Context) {
 	c.JSON(http.StatusOK, vm)
 }
 
+	c.JSON(http.StatusOK, vm)
+}
+
+func (h *VMHandler) ExecuteBackup(c *gin.Context) {
+	idStr := c.Param("id")
+	vmID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid VM UUID format"})
+		return
+	}
+
+	var req struct {
+		BackupMode string `json:"backup_mode"` // "WARM" or "COLD"
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetUserRole(c)
+
+	vm, msg, err := h.vmService.ExecuteBackup(c.Request.Context(), vmID, userID, tenantID, role, req.BackupMode)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": msg,
+		"vm":      vm,
+	})
+}
+
 func (h *VMHandler) RebuildVM(c *gin.Context) {
 	idStr := c.Param("id")
 	vmID, err := uuid.Parse(idStr)

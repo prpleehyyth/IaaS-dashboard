@@ -93,7 +93,7 @@ export const SERVICES_LICENSE_CATALOG = [
     note: 'Menggantikan biaya perawatan/maintenance',
     scheme: 'Bulanan Rutin',
     tier1: { monthly: 100000, hourly: 136.99 },
-    tier2: { monthly: 15000, hourly: 205.48 },
+    tier2: { monthly: 150000, hourly: 205.48 },
     tier3: { monthly: 250000, hourly: 342.47 },
   },
   {
@@ -119,37 +119,92 @@ export const SERVICES_LICENSE_CATALOG = [
     tier3: { monthly: 0, hourly: 0 },
   },
   {
-    code: 'BCK-STR',
-    name: 'Storage Backup & Snapshot (Repository)',
-    unit: 'per 1 GB',
-    coverage: 'Ruang simpan automated backup harian/mingguan pada repository HDD SATA terpisah',
-    note: 'Dihitung per GB kuota ruang backup',
-    scheme: 'Bulanan Rutin',
-    tier1: { monthly: 300, hourly: 0.41 },
-    tier2: { monthly: 400, hourly: 0.55 },
-    tier3: { monthly: 500, hourly: 0.68 },
-  },
-  {
-    code: 'BCK-PBS',
-    name: 'Lisensi Proxmox Backup Server (PBS)',
+    code: 'BCK-PBS-WARM',
+    name: 'Add-On Proxmox Backup Server (PBS) — Warm Backup',
     unit: 'per 1 VM',
-    coverage: 'Subskripsi & Manajemen Proxmox Backup Server (Deduplikasi, Incremental & Enkripsi)',
-    note: 'Pilihan Toggle 1: Klasifikasi Proxmox Backup',
+    coverage: 'Live Online Snapshot (Zero Downtime Dirty-Bitmap Incremental, Deduplikasi & Zstd Encryption ke PBS)',
+    note: 'Khusus Hypervisor Proxmox VE (Mode: WARM / Live Snapshot)',
     scheme: 'Bulanan Rutin',
     tier1: { monthly: 50000, hourly: 68.49 },
     tier2: { monthly: 75000, hourly: 102.74 },
     tier3: { monthly: 100000, hourly: 136.99 },
   },
   {
-    code: 'BCK-VEEAM',
-    name: 'Lisensi Veeam Backup & Replication',
+    code: 'BCK-PBS-COLD',
+    name: 'Add-On Proxmox Backup Server (PBS) — Cold Backup',
     unit: 'per 1 VM',
-    coverage: 'Subskripsi Lisensi Veeam VUL (Veeam Universal License) Enterprise per Instance VM',
-    note: 'Pilihan Toggle 2: Klasifikasi Veeam Backup',
+    coverage: 'Consistent Offline Backup (Stop-Mode Full Block Consistency & Long-Term Archive ke PBS)',
+    note: 'Khusus Hypervisor Proxmox VE (Mode: COLD / Offline Archive)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 30000, hourly: 41.10 },
+    tier2: { monthly: 45000, hourly: 61.64 },
+    tier3: { monthly: 65000, hourly: 89.04 },
+  },
+  {
+    code: 'BCK-NETAPP-WARM',
+    name: 'Add-On VMware NetApp SnapCenter — Warm Backup',
+    unit: 'per 1 VM',
+    coverage: 'NetApp ONTAP Live Crash/App-Consistent Snapshot & SnapMirror Replication (Zero Downtime)',
+    note: 'Khusus Hypervisor VMware vSphere (Mode: WARM / Live Snapshot)',
     scheme: 'Bulanan Rutin',
     tier1: { monthly: 150000, hourly: 205.48 },
     tier2: { monthly: 200000, hourly: 273.97 },
     tier3: { monthly: 250000, hourly: 342.47 },
+  },
+  {
+    code: 'BCK-NETAPP-COLD',
+    name: 'Add-On VMware NetApp ONTAP — Cold Backup',
+    unit: 'per 1 VM',
+    coverage: 'NetApp ONTAP Quiesced/Offline Volume Snapshot & SnapVault Long-Term Cold Archive',
+    note: 'Khusus Hypervisor VMware vSphere (Mode: COLD / Offline Archive)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 95000, hourly: 130.14 },
+    tier2: { monthly: 130000, hourly: 178.08 },
+    tier3: { monthly: 175000, hourly: 239.73 },
+  },
+  {
+    code: 'BCK-VEEAM-WARM',
+    name: 'Add-On VMware Veeam Backup & Replication — Warm Backup',
+    unit: 'per 1 VM',
+    coverage: 'Veeam Universal License (VUL) — vSphere CBT Live Snapshot, Instant VM Recovery & Application-Aware Processing',
+    note: 'Khusus Hypervisor VMware vSphere (Mode: WARM / Live Snapshot)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 150000, hourly: 205.48 },
+    tier2: { monthly: 200000, hourly: 273.97 },
+    tier3: { monthly: 250000, hourly: 342.47 },
+  },
+  {
+    code: 'BCK-VEEAM-COLD',
+    name: 'Add-On VMware Veeam Backup & Replication — Cold Backup',
+    unit: 'per 1 VM',
+    coverage: 'Veeam Universal License (VUL) — Consistent Offline Backup Copy & Scale-Out Archive Repository',
+    note: 'Khusus Hypervisor VMware vSphere (Mode: COLD / Offline Archive)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 95000, hourly: 130.14 },
+    tier2: { monthly: 130000, hourly: 178.08 },
+    tier3: { monthly: 175000, hourly: 239.73 },
+  },
+  {
+    code: 'BCK-STR-WARM',
+    name: 'Repository Storage Backup (Warm / Active Tier)',
+    unit: 'per 1 GB',
+    coverage: 'Kuota ruang simpan snapshot harian cepat pada datastore PBS / NetApp ONTAP aktif',
+    note: 'Dihitung per GB kuota backup (Mode Warm)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 300, hourly: 0.41 },
+    tier2: { monthly: 400, hourly: 0.55 },
+    tier3: { monthly: 500, hourly: 0.68 },
+  },
+  {
+    code: 'BCK-STR-COLD',
+    name: 'Repository Storage Backup (Cold / Archive Tier)',
+    unit: 'per 1 GB',
+    coverage: 'Kuota ruang simpan arsip mingguan pada repository PBS / NetApp SnapVault Cold Storage',
+    note: 'Dihitung per GB kuota backup (Mode Cold)',
+    scheme: 'Bulanan Rutin',
+    tier1: { monthly: 200, hourly: 0.27 },
+    tier2: { monthly: 275, hourly: 0.38 },
+    tier3: { monthly: 350, hourly: 0.48 },
   },
   {
     code: 'NET-IPV4',
@@ -257,6 +312,62 @@ export const TIER_DEFINITIONS = {
       dedicatedIPMonthly: 75000,
     }
   }
+};
+
+/**
+ * Menghitung biaya bulanan Add-On Backup berdasarkan Tier, Hypervisor (Proxmox=PBS, VMware=NetApp), dan Mode (WARM/COLD)
+ */
+export const calculateBackupAddonCost = (tierKey, hypervisorType, backupMode, backupQuotaGB, diskGB = 50, requestedProvider = '') => {
+  const mode = (backupMode || 'NONE').toUpperCase();
+  if (mode !== 'WARM' && mode !== 'COLD') {
+    return { baseMonthly: 0, storageMonthly: 0, totalMonthly: 0, provider: 'NONE', providerLabel: 'Tanpa Backup' };
+  }
+
+  const isVMware = (hypervisorType || '').toUpperCase() === 'VMWARE';
+  const reqProv = (requestedProvider || '').toUpperCase();
+  const provider = isVMware ? (reqProv === 'VEEAM' ? 'VEEAM' : 'NETAPP') : 'PBS';
+  const providerLabel = !isVMware
+    ? 'Proxmox Backup Server (PBS)'
+    : provider === 'VEEAM'
+      ? 'Veeam Backup & Replication (VUL)'
+      : 'NetApp ONTAP / SnapCenter';
+  const quota = backupQuotaGB > 0 ? backupQuotaGB : diskGB;
+  const tier = (tierKey || 'TIER_1').toUpperCase();
+
+  let baseMonthly = 0;
+  let repoPerGB = 0;
+
+  if (isVMware) {
+    // VMware -> NetApp
+    if (mode === 'WARM') {
+      baseMonthly = tier === 'TIER_3' ? 250000 : tier === 'TIER_2' ? 200000 : 150000;
+      repoPerGB = tier === 'TIER_3' ? 500 : tier === 'TIER_2' ? 400 : 300;
+    } else {
+      baseMonthly = tier === 'TIER_3' ? 175000 : tier === 'TIER_2' ? 130000 : 95000;
+      repoPerGB = tier === 'TIER_3' ? 350 : tier === 'TIER_2' ? 275 : 200;
+    }
+  } else {
+    // Proxmox -> PBS
+    if (mode === 'WARM') {
+      baseMonthly = tier === 'TIER_3' ? 100000 : tier === 'TIER_2' ? 75000 : 50000;
+      repoPerGB = tier === 'TIER_3' ? 500 : tier === 'TIER_2' ? 400 : 300;
+    } else {
+      baseMonthly = tier === 'TIER_3' ? 65000 : tier === 'TIER_2' ? 45000 : 30000;
+      repoPerGB = tier === 'TIER_3' ? 350 : tier === 'TIER_2' ? 275 : 200;
+    }
+  }
+
+  const storageMonthly = quota * repoPerGB;
+  return {
+    baseMonthly,
+    repoPerGB,
+    quotaGB: quota,
+    storageMonthly,
+    totalMonthly: baseMonthly + storageMonthly,
+    provider,
+    providerLabel,
+    mode
+  };
 };
 
 export const formatCurrencyIDR = (val, maxFraction = 0) => {

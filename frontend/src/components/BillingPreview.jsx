@@ -26,6 +26,8 @@ import {
   TIER_DEFINITIONS, 
   COMPUTE_STORAGE_CATALOG, 
   SERVICES_LICENSE_CATALOG,
+  calculateBackupAddonCost,
+  formatCurrencyIDR,
   formatCurrencyIDR,
   formatNumber
 } from '../constants/pricingCatalog';
@@ -44,6 +46,10 @@ export default function BillingPreview({ user, onNavigateRates }) {
   const [calcDiskType, setCalcDiskType] = useState('STR-SSATA');
   const [calcDiskGB, setCalcDiskGB] = useState(50);
   const [calcOS, setCalcOS] = useState('FREE'); // 'FREE' | 'RHEL'
+  const [calcHypervisor, setCalcHypervisor] = useState('PROXMOX'); // 'PROXMOX' | 'VMWARE'
+  const [calcBackupProvider, setCalcBackupProvider] = useState('NETAPP'); // 'NETAPP' | 'VEEAM' (when VMWARE)
+  const [calcBackupMode, setCalcBackupMode] = useState('NONE'); // 'NONE' | 'WARM' | 'COLD'
+  const [calcBackup, setCalcBackup] = useState('NONE'); // legacy alias
   const [calcBackup, setCalcBackup] = useState('NONE'); // 'NONE' | 'PBS' | 'VEEAM'
   const [calcBackupGB, setCalcBackupGB] = useState(50);
   const [calcDedicatedIP, setCalcDedicatedIP] = useState(false);
@@ -142,7 +148,8 @@ export default function BillingPreview({ user, onNavigateRates }) {
     calcOSMonthly = subCount * (calcTier === 'TIER_1' ? 160000 : calcTier === 'TIER_2' ? 185000 : 225000);
   }
 
-  let calcBackupMonthly = 0;
+  const backupAddonInfo = calculateBackupAddonCost(calcTier, calcHypervisor, calcBackupMode, calcBackupGB, calcDiskGB, calcBackupProvider);
+  let calcBackupMonthly = backupAddonInfo.totalMonthly;
   if (calcBackup === 'PBS') {
     calcBackupMonthly = (calcTier === 'TIER_1' ? 50000 : calcTier === 'TIER_2' ? 75000 : 100000) +
       (calcBackupGB * (calcTier === 'TIER_1' ? 300 : calcTier === 'TIER_2' ? 400 : 500));
@@ -394,7 +401,7 @@ export default function BillingPreview({ user, onNavigateRates }) {
                     <th>Spesifikasi</th>
                     <th>Biaya Compute</th>
                     <th>Biaya Storage</th>
-                    <th>Virtualisasi & Ops</th>
+                    <th>Virtualisasi, Ops & Backup</th>
                     <th style={{ textAlign: 'right' }}>Total / Jam</th>
                     <th style={{ textAlign: 'right' }}>Total / Bulan</th>
                   </tr>
@@ -454,6 +461,11 @@ export default function BillingPreview({ user, onNavigateRates }) {
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                             VRT: {formatCurrencyIDR((vm.virt_cost_hourly || 0) * hoursBaseline)} • Ops: {formatCurrencyIDR(((vm.man_cost_hourly || 0) + (vm.bandwidth_cost_hourly || 0)) * hoursBaseline)}
+                            {vm.backup_mode && vm.backup_mode !== 'NONE' && (
+                              <div style={{ fontSize: '0.72rem', color: vm.backup_mode === 'WARM' ? '#d97706' : '#0284c7', fontWeight: 700, marginTop: '3px' }}>
+                                + Backup {vm.backup_provider || 'PBS'} ({vm.backup_mode} • {vm.backup_quota_gb || vm.disk_gb} GB): {formatCurrencyIDR(vm.backup_cost_monthly || ((vm.backup_cost_hourly || 0) * hoursBaseline))}/bln
+                              </div>
+                            )}
                           </div>
                         </td>
 
@@ -878,6 +890,89 @@ export default function BillingPreview({ user, onNavigateRates }) {
 
             {/* Backup Add-on */}
             <div className="form-group">
+              <label className="form-label">Platform Hypervisor & Engine Backup</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCalcHypervisor('PROXMOX')}
+                  style={{
+                    padding: '9px 8px',
+                    borderRadius: '8px',
+                    border: calcHypervisor === 'PROXMOX' ? '2px solid #0284c7' : '1px solid var(--border-subtle)',
+                    background: calcHypervisor === 'PROXMOX' ? '#f0f9ff' : '#ffffff',
+                    color: calcHypervisor === 'PROXMOX' ? '#0284c7' : 'var(--text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Proxmox VE → PBS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCalcHypervisor('VMWARE'); setCalcBackupProvider('NETAPP'); }}
+                  style={{
+                    padding: '9px 8px',
+                    borderRadius: '8px',
+                    border: calcHypervisor === 'VMWARE' && calcBackupProvider === 'NETAPP' ? '2px solid #1e3a8a' : '1px solid var(--border-subtle)',
+                    background: calcHypervisor === 'VMWARE' && calcBackupProvider === 'NETAPP' ? '#eff6ff' : '#ffffff',
+                    color: calcHypervisor === 'VMWARE' && calcBackupProvider === 'NETAPP' ? '#1e3a8a' : 'var(--text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  VMware → NetApp ONTAP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCalcHypervisor('VMWARE'); setCalcBackupProvider('VEEAM'); }}
+                  style={{
+                    padding: '9px 8px',
+                    borderRadius: '8px',
+                    border: calcHypervisor === 'VMWARE' && calcBackupProvider === 'VEEAM' ? '2px solid #059669' : '1px solid var(--border-subtle)',
+                    background: calcHypervisor === 'VMWARE' && calcBackupProvider === 'VEEAM' ? '#ecfdf5' : '#ffffff',
+                    color: calcHypervisor === 'VMWARE' && calcBackupProvider === 'VEEAM' ? '#059669' : 'var(--text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  VMware → Veeam B&amp;R
+                </button>
+              </div>
+              <label className="form-label">Mode Add-On Backup (Warm / Cold)</label>
+              <select
+                className="form-select"
+                value={calcBackupMode}
+                onChange={(e) => setCalcBackupMode(e.target.value)}
+              >
+                <option value="NONE">Tanpa Add-On Backup Otomatis (Backup Manual)</option>
+                <option value="WARM">
+                  WARM Backup ({calcHypervisor === 'VMWARE' ? (calcBackupProvider === 'VEEAM' ? 'Veeam CBT Live Snapshot + Instant Recovery' : 'NetApp Live Snapshot + SnapMirror') : 'PBS Live Dirty-Bitmap Snapshot'}) — Zero Downtime
+                </option>
+                <option value="COLD">
+                  COLD Backup ({calcHypervisor === 'VMWARE' ? (calcBackupProvider === 'VEEAM' ? 'Veeam Consistent Backup Copy + Archive Repo' : 'NetApp Quiesced Snapshot + SnapVault Archive') : 'PBS Stop-Mode Consistent Archive'}) — Hemat Biaya
+                </option>
+              </select>
+              {calcBackupMode !== 'NONE' && (
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Kuota Repository Backup ({backupAddonInfo.providerLabel}):</span>
+                    <strong style={{ color: '#0284c7' }}>{calcBackupGB} GB ({formatCurrencyIDR(backupAddonInfo.totalMonthly)}/bln)</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={calcDiskGB}
+                    max="1000"
+                    step="10"
+                    value={Math.max(calcBackupGB, calcDiskGB)}
+                    onChange={(e) => setCalcBackupGB(parseInt(e.target.value, 10))}
+                    style={{ width: '100%', accentColor: '#0284c7' }}
+                  />
+                </div>
+              )}
+              {false && (<>
               <label className="form-label">Solusi Backup & Disaster Recovery</label>
               <select 
                 className="form-select"
@@ -887,6 +982,8 @@ export default function BillingPreview({ user, onNavigateRates }) {
                 <option value="NONE">Tanpa Lisensi Backup Tambahan (Backup Manual)</option>
                 <option value="PBS">Proxmox Backup Server (BCK-PBS) — Deduplikasi & Enkripsi</option>
                 <option value="VEEAM">Veeam Backup & Replication (BCK-VEEAM) — Enterprise Universal License</option>
+              </select></>)}
+              {false && <select>
               </select>
             </div>
 
@@ -959,7 +1056,13 @@ export default function BillingPreview({ user, onNavigateRates }) {
                 </div>
               )}
 
-              {calcBackup !== 'NONE' && (
+              {calcBackupMode !== 'NONE' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px dashed #e2e8f0' }}>
+                  <span>Add-On Backup {backupAddonInfo.provider} ({calcBackupMode} • {Math.max(calcBackupGB, calcDiskGB)} GB):</span>
+                  <strong style={{ color: '#0284c7' }}>{formatCurrencyIDR(calcBackupMonthly)}</strong>
+                </div>
+              )}
+              {false && calcBackup !== 'NONE' && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px dashed #e2e8f0' }}>
                   <span>Lisensi & Storage Backup ({calcBackup}):</span>
                   <strong style={{ color: '#0284c7' }}>{formatCurrencyIDR(calcBackupMonthly)}</strong>

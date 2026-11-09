@@ -23,6 +23,8 @@ import {
 import { api } from '../api/client';
 import { 
   TIER_DEFINITIONS, 
+  calculateBackupAddonCost,
+  formatCurrencyIDR 
   formatCurrencyIDR 
 } from '../constants/pricingCatalog';
 
@@ -107,7 +109,7 @@ const STEPS = [
   { id: 1, title: 'Paket & Spesifikasi', shortTitle: 'Paket Tier', icon: Layers },
   { id: 2, title: 'Identitas & Lokasi', shortTitle: 'Identitas', icon: Server },
   { id: 3, title: 'OS & Boot Media', shortTitle: 'OS & Boot', icon: Disc },
-  { id: 4, title: 'Jaringan & VLAN', shortTitle: 'Jaringan', icon: Network },
+  { id: 4, title: 'Jaringan, VLAN & Backup Add-On', shortTitle: 'Jaringan & Backup', icon: Network },
   { id: 5, title: 'Review & Konfirmasi', shortTitle: 'Review', icon: CheckCircle2 }
 ];
 
@@ -145,6 +147,12 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
   const [networkModel, setNetworkModel] = useState('virtio');
   const [firewall, setFirewall] = useState(true);
   const [macAddress, setMacAddress] = useState('');
+
+  // Backup Add-On (Warm / Cold — Proxmox PBS / VMware NetApp or Veeam)
+  const [backupMode, setBackupMode] = useState('NONE'); // 'NONE' | 'WARM' | 'COLD'
+  const [backupProvider, setBackupProvider] = useState('NETAPP'); // 'NETAPP' | 'VEEAM' (for VMware; Proxmox always PBS)
+  const [backupQuotaGB, setBackupQuotaGB] = useState(50);
+  const [backupSchedule, setBackupSchedule] = useState('DAILY');
 
   // Status & Validation states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -219,12 +227,30 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
     const manCost = tier.manCostMonthly || 100000;
     const bwCost = tier.bandwidthMonthly || 75000;
     const otcSetup = tier.setupFeeOTC || 150000;
-    
-    const monthlyRecurring = cpuCost + ramCost + diskCost + virtCost + manCost + bwCost;
+    const effectiveTierKey = activeTierKey === 'CUSTOM' ? customRateBasis : activeTierKey;
+    const backupCalc = calculateBackupAddonCost(effectiveTierKey, selectedCluster?.type || 'PROXMOX', backupMode, parseInt(backupQuotaGB, 10) || diskGB, diskGB, backupProvider);
+    const monthlyRecurring = cpuCost + ramCost + diskCost + virtCost + manCost + bwCost + backupCalc.totalMonthly;
     return {
       monthly: monthlyRecurring,
       firstMonth: monthlyRecurring + otcSetup,
       otc: otcSetup,
+      otcExpected: otcSetup,
+      hourly: monthlyRecurring / 730,
+      backupCost: backupCalc.totalMonthly,
+      backupProviderLabel: backupCalc.providerLabel,
+      backupProvider: backupCalc.provider,
+    };
+  }, [activeTierDef, activeTierKey, customRateBasis, selectedCluster, cpuCores, ramGB, diskGB, backupMode, backupProvider, backupQuotaGB]);
+
+  // (legacy estimator removed)
+  const _unusedOldEst = useMemo(() => {
+    
+    const monthlyRecurring = (activeTierDef.rates.cpuMonthly || 50000);
+    return {
+      monthly: monthlyRecurring,
+      firstMonth: monthlyRecurring,
+      otc: 0,
+      otcExpected: 0,
       hourly: monthlyRecurring / 730
     };
   }, [activeTierDef, cpuCores, ramGB, diskGB]);
@@ -402,6 +428,11 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
         network_model: noNetwork ? 'none' : networkModel,
         firewall: !noNetwork ? firewall : false,
         mac_address: (!noNetwork && macAddress.trim() && macAddress.trim().toLowerCase() !== 'auto') ? macAddress.trim() : 'auto',
+        // Backup Add-On (Proxmox PBS / VMware NetApp or Veeam)
+        backup_mode: backupMode,
+        backup_provider: backupMode === 'NONE' ? 'NONE' : (selectedCluster?.type === 'VMWARE' ? backupProvider : 'PBS'),
+        backup_quota_gb: backupMode === 'NONE' ? 0 : (parseInt(backupQuotaGB, 10) || parseInt(diskGB, 10)),
+        backup_schedule: backupMode === 'NONE' ? 'NONE' : backupSchedule,
       });
       onClose();
     } catch (err) {
@@ -1533,6 +1564,184 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                   </div>
                 )}
               </div>
+
+              {/* Add-On Backup & Disaster Recovery (Warm / Cold — Proxmox PBS / VMware NetApp) */}
+              <div style={{
+                background: '#f8fafc',
+                padding: '16px 18px',
+                borderRadius: '12px',
+                border: '1px solid var(--border-subtle)',
+                marginBottom: '8px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Shield size={16} style={{ color: selectedCluster?.type === 'VMWARE' ? '#0284c7' : '#c2410c' }} />
+                    <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                      Add-On Backup &amp; Disaster Recovery (Warm &amp; Cold)
+                    </span>
+                  </div>
+                  <span className={selectedCluster?.type === 'VMWARE' ? 'badge-vmware' : 'badge-proxmox'} style={{ fontSize: '0.72rem' }}>
+                    {selectedCluster?.type === 'VMWARE'
+                      ? (backupProvider === 'VEEAM' ? 'VMware • Veeam Backup & Replication' : 'VMware • NetApp ONTAP / SnapCenter')
+                      : 'Proxmox • Proxmox Backup Server (PBS)'}
+                  </span>
+                </div>
+
+                {selectedCluster?.type === 'VMWARE' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBackupProvider('NETAPP')}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: backupProvider === 'NETAPP' ? '2px solid #0284c7' : '1px solid var(--border-subtle)',
+                        background: backupProvider === 'NETAPP' ? '#f0f9ff' : '#ffffff',
+                        color: backupProvider === 'NETAPP' ? '#0284c7' : 'var(--text-muted)',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Engine 1: NetApp ONTAP / SnapCenter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBackupProvider('VEEAM')}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: backupProvider === 'VEEAM' ? '2px solid #059669' : '1px solid var(--border-subtle)',
+                        background: backupProvider === 'VEEAM' ? '#ecfdf5' : '#ffffff',
+                        color: backupProvider === 'VEEAM' ? '#059669' : 'var(--text-muted)',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Engine 2: Veeam Backup &amp; Replication (VUL)
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px', marginBottom: backupMode !== 'NONE' ? '14px' : 0 }}>
+                  {[
+                    {
+                      id: 'NONE',
+                      title: 'Tanpa Add-On Backup',
+                      badge: 'Manual / Off',
+                      desc: 'Tidak ada jadwal backup otomatis. Backup dikelola manual.',
+                      color: '#64748b'
+                    },
+                    {
+                      id: 'WARM',
+                      title: 'Warm Backup (Live)',
+                      badge: selectedCluster?.type === 'VMWARE'
+                        ? (backupProvider === 'VEEAM' ? 'Veeam CBT Live' : 'NetApp Live SnapMirror')
+                        : 'PBS Live Snapshot',
+                      desc: selectedCluster?.type === 'VMWARE'
+                        ? (backupProvider === 'VEEAM'
+                          ? 'Veeam CBT Live Snapshot + Instant VM Recovery tanpa downtime.'
+                          : 'Snapshot online NetApp SnapCenter + replikasi SnapMirror tanpa downtime.')
+                        : 'Live incremental snapshot (dirty-bitmap) ke Proxmox Backup Server tanpa mematikan VM.',
+                      color: '#0284c7'
+                    },
+                    {
+                      id: 'COLD',
+                      title: 'Cold Backup (Offline)',
+                      badge: selectedCluster?.type === 'VMWARE'
+                        ? (backupProvider === 'VEEAM' ? 'Veeam Archive Copy' : 'NetApp SnapVault Cold')
+                        : 'PBS Stop-Mode Archive',
+                      desc: selectedCluster?.type === 'VMWARE'
+                        ? (backupProvider === 'VEEAM'
+                          ? 'Veeam Consistent Offline Backup Copy ke Scale-Out Archive Repository.'
+                          : 'Snapshot volume konsisten penuh ke NetApp SnapVault untuk arsip jangka panjang.')
+                        : 'Consistent stop-mode backup terkompresi Zstd ke Proxmox Backup Server (biaya lebih hemat).',
+                      color: '#0f766e'
+                    }
+                  ].map(opt => {
+                    const isAct = backupMode === opt.id;
+                    return (
+                      <div
+                        key={opt.id}
+                        onClick={() => {
+                          setBackupMode(opt.id);
+                          if (opt.id !== 'NONE' && (!backupQuotaGB || backupQuotaGB < diskGB)) {
+                            setBackupQuotaGB(diskGB);
+                          }
+                          if (opt.id === 'WARM') setBackupSchedule('DAILY');
+                          if (opt.id === 'COLD') setBackupSchedule('WEEKLY');
+                        }}
+                        style={{
+                          padding: '12px',
+                          borderRadius: '10px',
+                          border: isAct ? `2px solid ${opt.color}` : '1px solid var(--border-subtle)',
+                          background: isAct ? '#ffffff' : '#f1f5f9',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isAct ? opt.color : 'var(--text-main)' }}>
+                            {opt.title}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, background: isAct ? opt.color : '#e2e8f0', color: isAct ? '#fff' : '#475569', padding: '1px 6px', borderRadius: '6px' }}>
+                            {opt.badge}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                          {opt.desc}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {backupMode !== 'NONE' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Kuota Repository Backup (GB)</label>
+                      <input
+                        type="number"
+                        min={diskGB}
+                        max="2000"
+                        step="10"
+                        className="form-input"
+                        value={backupQuotaGB}
+                        onChange={(e) => setBackupQuotaGB(e.target.value)}
+                        style={{ padding: '7px 10px', fontSize: '0.84rem' }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Jadwal Retensi Otomatis</label>
+                      <select
+                        className="form-select"
+                        value={backupSchedule}
+                        onChange={(e) => setBackupSchedule(e.target.value)}
+                        style={{ padding: '7px 10px', fontSize: '0.84rem' }}
+                      >
+                        <option value="DAILY">Harian (Daily Snapshot)</option>
+                        <option value="WEEKLY">Mingguan (Weekly Archive)</option>
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', color: '#065f46', fontWeight: 700 }}>
+                      <span>
+                        Engine Aktif: {estimatedCost.backupProviderLabel} • Mode {backupMode} ({backupSchedule})
+                      </span>
+                      <span>
+                        +{formatCurrencyIDR(estimatedCost.backupCost)} / bulan
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {false && (<div><div><div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1669,6 +1878,25 @@ export default function CreateVMModal({ clusters, onClose, onCreate }) {
                         </div>
                       ) : (
                         <span style={{ color: '#64748b', fontStyle: 'italic' }}>Tidak ada virtual network adapter (Isolated)</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Row 4.5: Backup Add-On */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', gap: '10px' }}>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Backup Add-On:</span>
+                    <div>
+                      {backupMode !== 'NONE' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ background: '#eff6ff', color: '#1e3a8a', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '4px', fontSize: '0.76rem', fontWeight: 700 }}>
+                            {estimatedCost.backupProviderLabel} ({backupMode})
+                          </span>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            Kuota {backupQuotaGB} GB • Jadwal {backupSchedule} (+{formatCurrencyIDR(estimatedCost.backupCost)}/bln)
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#64748b', fontStyle: 'italic' }}>Tanpa Add-On Backup Otomatis (Manual)</span>
                       )}
                     </div>
                   </div>

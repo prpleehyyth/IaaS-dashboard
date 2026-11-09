@@ -1214,3 +1214,91 @@ func (p *ProxmoxDriver) DeleteHypervisorUser(ctx context.Context, cluster *model
 	}
 	return fmt.Errorf("Proxmox delete user returned HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 }
+
+func (p *ProxmoxDriver) getBackupStorage(ctx context.Context, nodeName string) string {
+	resp, err := p.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", nodeName), nil)
+	if err == nil {
+		defer resp.Body.Close()
+		var storagesResp struct {
+			Data []struct {
+				Storage string `json:"storage"`
+				Content string `json:"content"`
+				Active  int    `json:"active"`
+				Type    string `json:"type"`
+			} `json:"data"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&storagesResp) == nil && len(storagesResp.Data) > 0 {
+			for _, s := range storagesResp.Data {
+				if s.Active == 1 && s.Type == "pbs" {
+					return s.Storage
+				}
+			}
+			for _, s := range storagesResp.Data {
+				if s.Active == 1 && strings.Contains(s.Content, "backup") {
+					return s.Storage
+				}
+			}
+		}
+	}
+	return "local"
+}
+
+func (p *ProxmoxDriver) TriggerBackup(ctx context.Context, cluster *models.Cluster, node *models.Node, vmid int, vmName string, backupMode string) (string, error) {
+	nodeName := "pve"
+	if node != nil && node.ID != "" {
+		nodeName = node.ID
+	}
+
+	respRes, errRes := p.doRequest(ctx, http.MethodGet, "/cluster/resources?type=vm", nil)
+	if errRes == nil {
+		defer respRes.Body.Close()
+		var pveVMs struct {
+			Data []struct {
+				VMID int    `json:"vmid"`
+				Node string `json:"node"`
+			} `json:"data"`
+		}
+		if json.NewDecoder(respRes.Body).Decode(&pveVMs) == nil {
+			for _, item := range pveVMs.Data {
+				if item.VMID == vmid && item.Node != "" {
+					nodeName = item.Node
+					break
+				}
+			}
+		}
+	}
+
+	pbsStorage := p.getBackupStorage(ctx, nodeName)
+
+	vzdumpMode := "snapshot"
+	modeUpper := strings.ToUpper(strings.TrimSpace(backupMode))
+	if modeUpper == "COLD" {
+		vzdumpMode = "stop"
+	} else {
+		modeUpper = "WARM"
+	}
+
+	formData := url.Values{}
+	formData.Set("vmid", strconv.Itoa(vmid))
+	formData.Set("storage", pbsStorage)
+	formData.Set("mode", vzdumpMode)
+	formData.Set("compress", "zstd")
+	formData.Set("notes-template", fmt.Sprintf("CloudForge PBS %s Backup (%s)", modeUpper, vmName))
+
+	backupURL := fmt.Sprintf("/nodes/%s/vzdump", nodeName)
+	resp, err := p.doRequestWithContentType(ctx, http.MethodPost, backupURL, strings.NewReader(formData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return "", fmt.Errorf("failed to trigger Proxmox PBS backup on %s: %w", p.endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("Proxmox PBS backup error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	msg := fmt.Sprintf("Proxmox Backup Server (PBS) %s Backup [mode=%s, storage=%s] initiated for VM %d (%s)", modeUpper, vzdumpMode, pbsStorage, vmid, vmName)
+	log.Printf("[Proxmox PBS] %s: %s", msg, string(bodyBytes))
+	return msg, nil
+
+}
